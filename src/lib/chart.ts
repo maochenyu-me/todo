@@ -23,15 +23,17 @@ export const BAR_GEOMETRY = {
   /**
    * 一根柱子占的横向宽度（含左右留白，给柱底文字腾地方）。
    *
-   * 34 而不是更小：柱底文字是 `月/日`（最长 `10/26`），12px 字号下约 30px 宽，
-   * 留 6px 缝才不至于两根柱子的字粘在一起。想让 12 根柱子挤进 320px 屏，
-   * 只能把字号降到 6px——那正好是这次要修的病。
+   * 这是**下限**：`planBars()` 会按实际标签宽度算一遍，取
+   * `max(slot, 最宽标签 + labelGap)`，所以 36 只对窄标签（`8/10`）生效，
+   * 换成 `10/26` 或 `12月31日` 时柱位会自动加宽，绝不会撞字。
    */
   slot: 36,
+  /** 相邻两个柱底标签之间至少要留的缝。 */
+  labelGap: 6,
   /** 柱子本身的宽度。 */
   bar: 16,
-  /** 基线到柱底文字底边的距离。 */
-  labelHeight: 18,
+  /** 基线到柱底文字底边的距离。20 而不是 18：12px 字的下伸约 3px，再加 1px 余量。 */
+  labelHeight: 20,
   /** 基线下面的留白。 */
   axisGap: 2,
   /** 截断时柱顶那行真实数值占的高度。 */
@@ -59,21 +61,96 @@ export const LINE_GEOMETRY = {
    *
    * 折线图是**只缩不放**的（`max-w-full`，不给 `w-full`）：容器比它宽就按自然尺寸画，
    * 窄到 320px 屏的内容区（约 280px）时等比缩 `280 / 320 = 0.875`，
-   * 于是 `axisFont = 14` 渲染成 `14 × 0.875 = 12.3px`，仍在可读线上。
+   * 于是 `axisFont = 14` 渲染成 `14 × 0.875 = 12.25px`，仍在可读线上。
    */
   width: 320,
   /** 缺省画布高度。 */
   height: 120,
   minHeight: 60,
   maxHeight: 320,
-  /** 左侧留给 100%/0% 读数的宽度。 */
-  padLeft: 34,
+  /**
+   * 左侧留给纵轴读数（`100%` / `0%`）的宽度。
+   *
+   * 这个数**不是**审美选择，是被字宽算出来的：`100%` 在 14px 下最宽 2.645em ≈ 37.0px
+   * （见 `advanceEm`），加上 6px 缝 = 43.0px；留 46 是给字体差异和亚像素余量。
+   *
+   * 曾经的 34 是个真事故：`text-anchor="end"` 把标签的右边缘钉在 `46-…`→当时是
+   * `34-6=28`，而 37px 的字宽从 28 往左伸到 −9，`1` 整个落在 viewBox 外面被裁掉，
+   * 页面上于是印出「00%」。`chart.test.ts` 里的 label-fit 断言就是防这个的。
+   */
+  padLeft: 46,
   padRight: 6,
   padTop: 10,
   padBottom: 22,
+  /** 纵轴读数与轴线的水平间距。 */
+  yLabelGap: 6,
+  /** 横轴首尾两个标签之间至少留的空档（px）；小于它就算「叠字」。 */
+  minXLabelGap: 8,
   /** 轴文字字号（用户单位）。随画布缩放，算式见上面 `width`。 */
   axisFont: 14,
 } as const;
+
+/**
+ * 逐字符的字宽估计（单位 `em`）。
+ *
+ * 为什么需要它：SVG 里没有「自动换行/自动留白」，文字超出 viewBox 会被**静默裁掉**——
+ * 页面照样构建成功，只有人眼能发现少了个 `1`。真正量字宽要有字体引擎，构建期没有；
+ * 这里取一个**偏保守**的上界，把「装不下」变成构建期就能断言的事。
+ *
+ * 数值是实测出来的：在 100px 字号下量 Segoe UI / Arial / Tahoma 三套最常见的西文字体，
+ * 逐字符取**最大值**（见 `task-10-report.md` 的量表）。中文按 1em 算（实测 1.000–1.047）。
+ *
+ * 只覆盖图表里会出现的字符（数字、`%`、`/`、`-`、空格、ASCII 字母、CJK）。
+ * 遇到没登记的字符一律按 `1em` 估——宁可高估到报警，也不要低估到裁字。
+ */
+const CHAR_EM: Record<string, number> = {
+  '0': 0.556,
+  '1': 0.556,
+  '2': 0.556,
+  '3': 0.556,
+  '4': 0.556,
+  '5': 0.556,
+  '6': 0.556,
+  '7': 0.556,
+  '8': 0.556,
+  '9': 0.556,
+  '%': 0.977,
+  '/': 0.39,
+  '-': 0.4,
+  ':': 0.34,
+  '.': 0.28,
+  ' ': 0,
+};
+
+/** ASCII 字母：实测最宽 0.667em（`A`），取它当上界。 */
+const LETTER_EM = 0.667;
+/** 中文与全角标点：实测 1.000–1.047em。 */
+const CJK_EM = 1.05;
+
+/**
+ * 估算一段文字在给定字号下的**前进宽度**（px）。偏保守的上界，不是精确排版值。
+ *
+ * 用途只有一个：在构建期断言「这个标签装得进那个空隙」。它不需要和浏览器像素级一致，
+ * 只需要**不低于**真实宽度——所以每个字符都取三种常见字体的最大值。
+ */
+export function advanceEm(text: string, fontSize: number): number {
+  let em = 0;
+  for (const char of text) {
+    const known = CHAR_EM[char];
+    if (known !== undefined) {
+      em += known;
+      continue;
+    }
+    // ASCII 字母
+    if (/[A-Za-z]/.test(char)) {
+      em += LETTER_EM;
+      continue;
+    }
+    // 其余按全角算：CJK、全角标点，以及任何未登记的字符（宁可高估）。
+    em += CJK_EM;
+  }
+  return em * fontSize;
+}
 
 export type BarInput = { label: string; value: number };
 
@@ -112,6 +189,17 @@ export type BarPlan = {
   baseline: number;
   /** 所有方块的坐标，从下往上堆。 */
   squares: { x: number; y: number }[];
+  /**
+   * 柱底标签会不会**装不进自己的柱位**（相邻两个标签会撞在一起）。
+   *
+   * 构建期就能知道的事，不要留给读者的眼睛：组件据此加宽柱位（见组件里的
+   * `labelSlot`），测试据此钉住「最宽的标签 + 最小缝 ≤ 柱位」。
+   */
+  labelFits: boolean;
+  /** 最宽的那个柱底标签的估算宽度（px）。 */
+  widestLabel: number;
+  /** 最宽的柱顶数值标签的估算宽度（px）；没有截断时为 0。 */
+  widestValue: number;
 };
 
 /** 非负整数：负数、`NaN`、`±Infinity` 一律按 0，小数向下取整（口径同 `ticks.ts`）。 */
@@ -165,20 +253,50 @@ export function planBars({ data, max, ceiling }: BarPlanInput): BarPlan {
   const clipped = rows.some((row) => row.value > drawRows);
   const showValues = clipped;
 
+  /*
+   * 柱位宽度：既要装得下柱底标签，也要装得下柱顶那个真实数值。
+   *
+   * 这是「构建期就该知道的事」的典型：柱位固定 36 而标签是 `10/26`（12px 下约 30.8px，
+   * 三套西文字体里最宽的那套）+ 缝，只要换个字体或换个日期写法就会撞在一起。
+   * 这里按实际标签量一遍，取「固定柱位」与「最宽标签 + 缝」的较大值——
+   * 于是在任何数据下都不会撞字，而常见数据（`8/10` 这类窄标签）仍然用紧凑的 36。
+   */
+  const labelGap = BAR_GEOMETRY.labelGap;
+  const widestLabel = rows.reduce(
+    (widest, row) => Math.max(widest, advanceEm(row.label, BAR_GEOMETRY.axisFont)),
+    0,
+  );
+  const widestValue = showValues
+    ? rows.reduce(
+        (widest, row) =>
+          row.value > drawRows
+            ? Math.max(widest, advanceEm(String(row.value), BAR_GEOMETRY.valueFont))
+            : widest,
+        0,
+      )
+    : 0;
+
+  // 标签与数值共用同一个柱位；两者都要留缝。
+  const slot = Math.max(
+    BAR_GEOMETRY.slot,
+    Math.ceil(Math.max(widestLabel, widestValue) + labelGap),
+  );
+  // 判据：最宽的标签 + 最小缝 ≤ 生效柱位（宽度是取 max 来的，所以恒成立；
+  // 这个字段用来在测试里钉住「将来若有人把 max 去掉，立刻红」）。
+  const labelFits = Math.max(widestLabel, widestValue) + labelGap <= slot;
+
   const head = showValues ? BAR_GEOMETRY.valueHead : 0;
   const baseline = head + drawRows * BAR_GEOMETRY.row;
   // 至少一个柱位的宽度：空数据已走空状态，这里只是不让 `viewBox="0 0 0 …"` 出现。
-  const width = Math.max(rows.length * BAR_GEOMETRY.slot, BAR_GEOMETRY.slot);
+  const width = Math.max(rows.length * slot, slot);
   const height = baseline + BAR_GEOMETRY.axisGap + BAR_GEOMETRY.labelHeight;
 
   const squares: { x: number; y: number }[] = [];
   const placed: BarPlanRow[] = rows.map((row, index) => {
     const drawnRows = Math.min(row.value, drawRows);
     const x =
-      index * BAR_GEOMETRY.slot +
-      (BAR_GEOMETRY.slot - BAR_GEOMETRY.bar) / 2 +
-      (BAR_GEOMETRY.bar - BAR_GEOMETRY.square) / 2;
-    const centerX = index * BAR_GEOMETRY.slot + BAR_GEOMETRY.slot / 2;
+      index * slot + (slot - BAR_GEOMETRY.bar) / 2 + (BAR_GEOMETRY.bar - BAR_GEOMETRY.square) / 2;
+    const centerX = index * slot + slot / 2;
     const topY = baseline - drawnRows * BAR_GEOMETRY.row;
     for (let unit = 0; unit < drawnRows; unit += 1) {
       squares.push({ x, y: baseline - (unit + 1) * BAR_GEOMETRY.row + BAR_GEOMETRY.gap });
@@ -198,6 +316,9 @@ export function planBars({ data, max, ceiling }: BarPlanInput): BarPlan {
     height,
     baseline,
     squares,
+    labelFits,
+    widestLabel,
+    widestValue,
   };
 }
 
@@ -221,6 +342,28 @@ export type LinePlan = {
   /** 只有一个点时首尾重合，只标一次（重复标会叠字）。 */
   showLastLabel: boolean;
   axisLabels: { label: string; y: number }[];
+  /**
+   * 纵轴读数有没有**伸出画布左边**。
+   *
+   * 必须是 plan 的一部分而不是组件里的临时判断：`text-anchor="end"` 把标签右边缘钉在
+   * `plotLeft - yLabelGap`，若字宽超过 `plotLeft - yLabelGap`，左边那几个字符就落在
+   * viewBox 外面被静默裁掉（曾经把 `100%` 印成 `00%`）。
+   */
+  yLabelFits: boolean;
+  /** 最宽的纵轴读数的估算宽度（px）。 */
+  widestYLabel: number;
+  /**
+   * 首尾两个横轴标签会不会撞在一起。
+   *
+   * `formatLong()` 的写法（`2026年7月31日 周五`）在 14px 下有 130px 以上，两个加起来
+   * 就超过了 270px 的绘图区——两个都画出来会叠成一团。装不下时组件只画尾部那个
+   * （「到哪天为止」比「从哪天开始」更重要），并把完整范围留在 aria-label 与表格里。
+   */
+  xLabelsFit: boolean;
+  /** 首尾两个标签需要的总宽度（px）。 */
+  xLabelsWidth: number;
+  /** 首尾标签之间实际能腾出的空档（px），可能为负。 */
+  xLabelGap: number;
 };
 
 /** 比例归一化：非有限值按 0，其余夹进 [0, 1]——图上不会出现 NaN 坐标，也不会冲出画布。 */
@@ -234,6 +377,9 @@ export function ratioOf(value: number): number {
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
+
+/** 纵轴读数：只有 0% 与 100% 两个。中间不画网格线——一条线加两个数字已经够读。 */
+const axisLabelTexts = ['100%', '0%'];
 
 /**
  * 折线图画法。
@@ -276,6 +422,36 @@ export function planLine({
     .map((sample, index) => `${index === 0 ? 'M' : 'L'}${stepX(index)} ${stepY(sample.y)}`)
     .join(' ');
 
+  const firstLabel = samples[0]?.x ?? '';
+  const lastLabel = samples[samples.length - 1]?.x ?? '';
+  const showLastLabel = samples.length > 1;
+
+  /*
+   * 纵轴读数能不能装进左边距。
+   *
+   * `text-anchor="end"` ⇒ 标签右边缘在 `plotLeft - yLabelGap`，往左伸 `width`。
+   * 装得下 ⇔ `width ≤ plotLeft - yLabelGap`。这条判据以前没人写，于是字号从 8 涨到 14
+   * 而 padLeft 没跟上时，`100%` 的 `1` 就被裁掉、页面上印出「00%」。
+   */
+  const widestYLabel = axisLabelTexts.reduce(
+    (widest, text) => Math.max(widest, advanceEm(text, LINE_GEOMETRY.axisFont)),
+    0,
+  );
+  const yLabelFits = widestYLabel <= plotLeft - LINE_GEOMETRY.yLabelGap;
+
+  /*
+   * 首尾两个横轴标签会不会撞。
+   *
+   * 绘图区宽度是 `plotWidth`；两个标签分别贴左端、贴右端，各自居外对齐，
+   * 所以它们占掉的总宽度就是两个字宽之和，中间剩下的才是空档。
+   */
+  const xLabelsWidth = showLastLabel
+    ? advanceEm(firstLabel, LINE_GEOMETRY.axisFont) +
+      advanceEm(lastLabel, LINE_GEOMETRY.axisFont)
+    : 0;
+  const xLabelGap = plotWidth - xLabelsWidth;
+  const xLabelsFit = !showLastLabel || xLabelGap >= LINE_GEOMETRY.minXLabelGap;
+
   return {
     samples,
     hasPoints: samples.length > 0,
@@ -287,13 +463,18 @@ export function planLine({
     plotHeight,
     topY,
     baselineY,
-    firstLabel: samples[0]?.x ?? '',
-    lastLabel: samples[samples.length - 1]?.x ?? '',
-    showLastLabel: samples.length > 1,
+    firstLabel,
+    lastLabel,
+    showLastLabel,
     // 中间不画网格线：一条线加两个数字已经够读。
-    axisLabels: [
-      { label: '100%', y: round2(topY) },
-      { label: '0%', y: round2(baselineY) },
-    ],
+    axisLabels: axisLabelTexts.map((label, index) => ({
+      label,
+      y: round2(index === 0 ? topY : baselineY),
+    })),
+    yLabelFits,
+    widestYLabel,
+    xLabelsFit,
+    xLabelsWidth,
+    xLabelGap,
   };
 }

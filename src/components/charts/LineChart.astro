@@ -14,10 +14,18 @@
  *
  * ## 尺寸：自然宽度 + 只缩不放
  *
- * 画布输出 `width`/`height` 属性的自然尺寸（`LINE_GEOMETRY.width` = 300 用户单位），
- * 外层只加 `max-w-full` + `h-auto`：容器够宽就按 300px 原样画（轴文字 13px），
- * 窄到 280px（320px 屏的内容区）时等比缩 0.93 倍（12.1px），仍然可读。
- * 不用 `w-full`——那会在桌面端把画布拉宽 1.8 倍，轴文字涨到 24px。
+ * 画布输出 `width`/`height` 属性的自然尺寸（`LINE_GEOMETRY.width` = 320 用户单位），
+ * 外层只加 `max-w-full` + `h-auto`：容器够宽就按 320px 原样画（轴文字 14px），
+ * 窄到 280px（320px 屏的内容区）时等比缩 0.875 倍（12.25px），仍然可读。
+ * 不用 `w-full`——那会在桌面端把画布拉宽 1.7 倍，轴文字涨到 24px。
+ *
+ * ## 文字不许被裁：几何留白是被字宽算出来的
+ *
+ * SVG 不会替你换行或撑开画布，超出 viewBox 的文字是**静默裁掉**的。所以左边距与
+ * 首尾标签的处理都由 `planLine()` 用 `advanceEm()` 量过：
+ * - `yLabelFits`：纵轴 `100%` 装得进 `padLeft - yLabelGap`；
+ * - `xLabelsFit`：首尾两个日期装得进绘图区。装不下时**只画尾部那个**——
+ *   「到哪天为止」比「从哪天开始」重要，完整范围仍在 aria-label 与表格里。
  */
 import EmptyState from '../EmptyState.astro';
 import { LINE_GEOMETRY, planLine } from '../../lib/chart';
@@ -85,11 +93,12 @@ const ariaLabel =
           vector-effect="non-scaling-stroke"
         />
 
-        {/* 纵轴读数：100% 与 0%，贴在左轴外侧。 */}
+        {/* 纵轴读数：100% 与 0%，贴在左轴外侧。锚点与 `yLabelFits` 里的算式必须一致：
+            右边缘在 `plotLeft - yLabelGap`，`planLine()` 已断言它装得进左边距。 */}
         {plan.axisLabels.map((axis) => (
           <text
-            x={plan.plotLeft - 6}
-            y={axis.y + 4}
+            x={plan.plotLeft - LINE_GEOMETRY.yLabelGap}
+            y={axis.y + 5}
             text-anchor="end"
             font-size={LINE_GEOMETRY.axisFont}
             class="text-muted-foreground"
@@ -111,17 +120,23 @@ const ariaLabel =
           vector-effect="non-scaling-stroke"
         />
 
-        {/* 横轴：首尾两个日期，贴着绘图区两端。 */}
-        <text
-          x={plan.plotLeft}
-          y={plan.height - 5}
-          text-anchor="start"
-          font-size={LINE_GEOMETRY.axisFont}
-          class="text-muted-foreground"
-          fill="currentColor"
-        >
-          {plan.firstLabel}
-        </text>
+        {/* 横轴：首尾两个日期，贴着绘图区两端。
+            装不下时只画尾部那个——`formatLong()` 的写法一个就 130px 上下，
+            两个都画会叠成一团；完整范围在 aria-label 与下面那张表里。 */}
+        {
+          plan.xLabelsFit ? (
+            <text
+              x={plan.plotLeft}
+              y={plan.height - 5}
+              text-anchor="start"
+              font-size={LINE_GEOMETRY.axisFont}
+              class="text-muted-foreground"
+              fill="currentColor"
+            >
+              {plan.firstLabel}
+            </text>
+          ) : null
+        }
         {
           plan.showLastLabel ? (
             <text

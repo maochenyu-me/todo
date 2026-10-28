@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, test } from 'vitest';
 
-import { BAR_GEOMETRY, LINE_GEOMETRY, planBars, planLine } from './chart';
+import { BAR_GEOMETRY, LINE_GEOMETRY, advanceEm, planBars, planLine } from './chart';
 
 /** 一本「正常」的 12 周数据：峰值远低于护栏。 */
 function normalWeeks() {
@@ -219,9 +219,11 @@ describe('chart.ts — 护栏与截断：必须报出**真实峰值**，不能�
       tall.height * 10,
     );
 
-    expect(tall.width).toBe(BAR_GEOMETRY.slot);
-    // 12 根柱子 ⇒ 12 个柱位。
-    expect(planBars({ data: normalWeeks() }).width).toBe(12 * BAR_GEOMETRY.slot);
+    expect(tall.width).toBeGreaterThanOrEqual(BAR_GEOMETRY.slot);
+    // 12 根柱子 ⇒ 12 个柱位；柱位会按标签宽度自动加宽，所以只断言下界与整除。
+    const twelve = planBars({ data: normalWeeks() });
+    expect(twelve.width % 12).toBe(0);
+    expect(twelve.width).toBeGreaterThanOrEqual(12 * BAR_GEOMETRY.slot);
     for (const plan of [tall, short]) {
       expect(plan.height).toBeGreaterThan(0);
       expect(plan.baseline).toBeGreaterThan(0);
@@ -332,6 +334,146 @@ describe('chart.ts — 折线路径', () => {
     expect(plan.axisLabels.map((axis) => axis.label)).toEqual(['100%', '0%']);
     expect(plan.axisLabels[0]?.y).toBe(plan.topY);
     expect(plan.axisLabels[1]?.y).toBe(plan.baselineY);
+  });
+});
+
+describe('chart.ts — 标签装得下（防「文字被 viewBox 静默裁掉」）', () => {
+  /*
+   * 这一组是补上一次事故的护栏：`axisFont` 从 8 涨到 14，而 `padLeft` 只从 30 涨到 34，
+   * 于是 `text-anchor="end"` 的 `100%`（14px 下最宽 2.645em ≈ 37px）有 9px 伸到
+   * viewBox 外面，`1` 被裁掉，页面上印出「00%」。构建成功、测试全绿、只有人眼看得出来。
+   */
+
+  test('纵轴最宽的读数装得进左边距（`100%` 不许被裁）', () => {
+    const plan = planLine({ points: [{ x: 'a', y: 0.5 }] });
+    expect(plan.yLabelFits).toBe(true);
+    // 判据与组件里的锚点算式必须一致：右边缘在 plotLeft - yLabelGap。
+    expect(plan.widestYLabel).toBeLessThanOrEqual(plotBudget());
+  });
+
+  test('纵轴读数按三套常见字体的**最宽**那套算，不是按乐观值', () => {
+    // Segoe UI 34.10 / Arial 35.81 / Tahoma 36.60（14px，实测）。
+    // 估计值必须 ≥ 三者最大，否则 Tahoma 用户就会看到少了 1 的「00%」。
+    const widest = planLine({ points: [] }).widestYLabel;
+    expect(widest).toBeGreaterThanOrEqual(36.6 - 0.5);
+    // 也别估到荒谬：不该超过两倍。
+    expect(widest).toBeLessThan(37 * 2);
+  });
+
+  test('左边距够宽：padLeft 去掉缝之后仍容得下 widestYLabel', () => {
+    expect(LINE_GEOMETRY.padLeft - LINE_GEOMETRY.yLabelGap).toBeGreaterThanOrEqual(
+      planLine({ points: [] }).widestYLabel,
+    );
+  });
+
+  test('横轴首尾标签装得进绘图区，或者明确判为装不下（二选一，不许含糊）', () => {
+    const long = planLine({
+      points: [
+        { x: '2026年7月31日 周五', y: 0 },
+        { x: '2026年10月28日 周三', y: 1 },
+      ],
+    });
+    // 两个 formatLong 标签在 270px 绘图区里必然装不下——判据必须说出来。
+    expect(long.xLabelsFit).toBe(false);
+    expect(long.xLabelGap).toBeLessThan(LINE_GEOMETRY.minXLabelGap);
+    // 装不下时组件只画尾部那个，而完整范围仍在 firstLabel / lastLabel 里。
+    expect(long.firstLabel).toBe('2026年7月31日 周五');
+    expect(long.lastLabel).toBe('2026年10月28日 周三');
+  });
+
+  test('短标签装得下时判为 true（不许一律说装不下）', () => {
+    const short = planLine({
+      points: [
+        { x: '7/31', y: 0 },
+        { x: '10/28', y: 1 },
+      ],
+    });
+    expect(short.xLabelsFit).toBe(true);
+    expect(short.xLabelGap).toBeGreaterThan(0);
+  });
+
+  test('单点时没有「首尾相撞」问题，不报装不下', () => {
+    const plan = planLine({ points: [{ x: '2026年10月28日 周三', y: 0.5 }] });
+    expect(plan.showLastLabel).toBe(false);
+    expect(plan.xLabelsFit).toBe(true);
+  });
+
+  test('柱底标签装得进柱位（含最宽的 `月/日`）', () => {
+    const plan = planBars({ data: normalWeeks() });
+    expect(plan.labelFits).toBe(true);
+    expect(plan.widestLabel + BAR_GEOMETRY.labelGap).toBeLessThanOrEqual(plan.width / 12);
+  });
+
+  test('柱位按实际标签宽度加宽，不是死守 36（更宽的日期写法也不撞字）', () => {
+    const narrow = planBars({ data: [{ label: '8/10', value: 5 }] });
+    const wide = planBars({
+      data: [
+        { label: '2026年10月19日 周一', value: 5 },
+        { label: '2026年10月26日 周一', value: 7 },
+      ],
+    });
+    expect(wide.labelFits).toBe(true);
+    expect(wide.width / 2).toBeGreaterThan(narrow.width);
+    // 相邻两根柱子的中心距 = 柱位，必须大于标签宽度 + 缝。
+    const spacing = wide.rows[1]!.centerX - wide.rows[0]!.centerX;
+    expect(spacing).toBeGreaterThanOrEqual(wide.widestLabel + BAR_GEOMETRY.labelGap);
+  });
+
+  test('柱顶真实数值也装得进柱位（`1400` 这种四位数不能撞邻居）', () => {
+    const plan = planBars({ data: [{ label: '10/26', value: 1400 }] });
+    expect(plan.showValues).toBe(true);
+    expect(plan.widestValue).toBeGreaterThan(0);
+    expect(plan.widestValue + BAR_GEOMETRY.labelGap).toBeLessThanOrEqual(plan.width);
+  });
+
+  test('最右侧柱顶数值不会伸出画布（五位、六位数也一样）', () => {
+    for (const value of [41, 205, 1400, 12345, 123456]) {
+      const plan = planBars({ data: normalWeeks().map((w, i) => (i === 11 ? { ...w, value } : w)) });
+      const last = plan.rows[plan.rows.length - 1]!;
+      const half = plan.widestValue / 2;
+      // 居中锚点 + 数值标签：右边缘 = centerX + 半宽，必须留在画布内。
+      expect(last.centerX + half).toBeLessThanOrEqual(plan.width);
+      expect(last.centerX - half).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  test('一行里最靠右的标签不会伸出画布右边', () => {
+    const plan = planBars({ data: normalWeeks() });
+    const last = plan.rows[plan.rows.length - 1]!;
+    const half = plan.widestLabel / 2;
+    // 居中锚点：右边缘 = centerX + 半宽。
+    expect(last.centerX + half).toBeLessThanOrEqual(plan.width);
+    // 第一个也不许伸出左边。
+    expect(plan.rows[0]!.centerX - half).toBeGreaterThanOrEqual(0);
+  });
+});
+
+/** 纵轴读数可用的水平预算：left edge 到 plotLeft 之间的净宽。 */
+function plotBudget() {
+  return LINE_GEOMETRY.padLeft - LINE_GEOMETRY.yLabelGap;
+}
+
+describe('chart.ts — advanceEm 宽度估计', () => {
+  test('已知字符按实测值累加', () => {
+    // 0.556 + 0.556 + 0.556 + 0.977 = 2.645em
+    expect(advanceEm('100%', 14)).toBeCloseTo(2.645 * 14, 5);
+    expect(advanceEm('1400', 11)).toBeCloseTo(4 * 0.556 * 11, 5);
+  });
+
+  test('比实测最宽的字体还宽或相等（宁可高估，不肯低估）', () => {
+    // 14px 实测：Segoe UI 34.10 / Arial 35.81 / Tahoma 36.60
+    expect(advanceEm('100%', 14)).toBeGreaterThanOrEqual(36.6);
+  });
+
+  test('CJK 按 1em 以上算，未登记字符也不当成 0 宽', () => {
+    expect(advanceEm('年', 14)).toBeGreaterThanOrEqual(14);
+    expect(advanceEm('\u{1F600}', 14)).toBeGreaterThan(0);
+  });
+
+  test('空串与纯空格不产生负值或 NaN', () => {
+    expect(advanceEm('', 14)).toBe(0);
+    expect(advanceEm('   ', 14)).toBe(0);
+    expect(Number.isFinite(advanceEm('  /  ', 14))).toBe(true);
   });
 });
 

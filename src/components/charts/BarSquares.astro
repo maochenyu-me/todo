@@ -22,6 +22,9 @@
  * 12 根柱子在 320px 屏上放不下（内容区约 280px），这里**不缩小**（缩小会把 12px
  * 压成 7.8px），而是让外层 `overflow-x-auto` 横向滚动：读者左右滑一下就能看全，
  * 文字始终是 12px。宽屏上画布保持自然宽度、不留 `max-h` 造成的空档。
+ *
+ * 柱位宽度不是写死的 36：`planBars()` 按**实际标签宽度**算
+ * `max(36, 最宽标签 + 缝)`，标签换成更宽的写法也不会与邻居撞字。
  */
 import EmptyState from '../EmptyState.astro';
 import { BAR_GEOMETRY, planBars } from '../../lib/chart';
@@ -70,8 +73,19 @@ const ariaLabel = [
     />
   ) : (
     <div>
-      {/* 窄屏横向滚动：见文件头「尺寸」一节。滚动容器不加 -mx/px，免得贴边出血。 */}
-      <div class="overflow-x-auto">
+      {/*
+        窄屏横向滚动容器：见文件头「尺寸」一节。
+
+        键盘与读屏都要能到达这里：可滚动区域默认不一定拿得到焦点（浏览器行为不一致），
+        所以显式 `tabindex="0"` + `role="group"` + 中文名。名字说清「这是什么」而不是
+        「滚动我」——读屏读到的应该是图表的身份，不是控件说明书。
+      */}
+      <div
+        class="overflow-x-auto"
+        tabindex="0"
+        role="group"
+        aria-label={`近 12 周每周完成数柱状图，宽 ${plan.width} 像素，窄屏可左右滚动`}
+      >
         <svg
           role="img"
           aria-label={ariaLabel}
