@@ -1,0 +1,10 @@
+{
+  "extends": "astro/tsconfigs/strict",
+  "include": [".astro/types.d.ts", "**/*"],
+  "exclude": ["dist", "test-results", "playwright-report"],
+  "compilerOptions": {
+    // @astrojs/react 在本任务已接线：.tsx 走 React 的 JSX 运行时
+    "jsx": "react-jsx",
+    "jsxImportSource": "react"
+  }
+}

@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+/* 明暗切换用 class 而非媒体查询：<head> 内联脚本在首帧前给 <html> 打 .dark */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* spec 7.2 色值 → Tailwind 令牌（bg-background / text-foreground / border-border 等） */
+@theme inline {
+  --color-background: var(--background);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-seal: var(--seal);
+  --color-done: var(--done);
+
+  /* 不加载任何 webfont：拉丁字体仅在本机已安装时生效，中文一律走系统栈 */
+  --font-sans:
+    "IBM Plex Sans", -apple-system, "Segoe UI", system-ui, "PingFang SC",
+    "HarmonyOS Sans SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+}
+
+/* 明亮：冷调簿纸 + 蓝黑墨水 + 印章朱红 */
+:root {
+  --background: #eff1ec;
+  --card: #fcfcfa;
+  --foreground: #1b2430;
+  --card-foreground: #1b2430;
+  --muted: #e6e9e2;
+  --muted-foreground: #5c6773;
+  --border: #d5d9d0;
+  --primary: #23407a;
+  --primary-foreground: #fcfcfa;
+  --seal: #be3a2b;
+  --done: #2f6b4f;
+
+  --radius: 0.5rem;
+}
+
+/* 暗黑 */
+.dark {
+  --background: #12171c;
+  --card: #171e24;
+  --foreground: #e6e9e4;
+  --card-foreground: #e6e9e4;
+  --muted: #1f272e;
+  --muted-foreground: #92a0ac;
+  --border: #26313a;
+  --primary: #7fa0e8;
+  --primary-foreground: #12171c;
+  --seal: #e4675a;
+  --done: #6faf88;
+}
+
+@layer base {
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.65;
+    /* 数字一律等宽对齐：日期、刻度、完成数 */
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+  }
+}

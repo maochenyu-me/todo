@@ -1,0 +1,19 @@
+---
+import "../styles/global.css";
+import { siteConfig } from "../../site.config.ts";
+---
+
+<!doctype html>
+<html lang={siteConfig.site.lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{siteConfig.site.title}</title>
+    <meta name="description" content={siteConfig.site.tagline} />
+  </head>
+  <body>
+    <main>
+      <h1>{siteConfig.site.title}</h1>
+    </main>
+  </body>
+</html>
