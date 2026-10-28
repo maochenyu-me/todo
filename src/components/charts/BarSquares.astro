@@ -1,0 +1,234 @@
+---
+/**
+ * 柱状图：柱子由**竖排的小方块**堆成，一格 = 一个单位。
+ *
+ * 为什么是方块而不是一根实心柱：这本簿子的语汇是「数格子」——首页与归档的进度条
+ * 就是一排小方块（`ProgressTicks`）。统计页的柱子沿用同一套语汇，读者不必在两套
+ * 图形语言之间切换，而且方块能**数**出来：一周比上周多做三件事，多出来的就是三格。
+ *
+ * 画法约束（与设计稿一致，改前请三思）：无渐变、无阴影、无光晕、无圆点；
+ * 颜色只取设计令牌（`--foreground` 的墨色 + `--border` 的格线），**不出现任何十六进制**。
+ *
+ * 零 JS：本组件只产出静态内联 `<svg>`，没有 `<script>`、没有 `client:*`。
+ */
+import EmptyState from '../EmptyState.astro';
+
+interface Props {
+  /** 一根柱子一项。`label` 是柱底文字（写法由调用方决定），`value` 是**单位个数**。 */
+  data: { label: string; value: number }[];
+  /**
+   * 纵轴顶端画到几格高。缺省取数据最大值。
+   *
+   * 显式传入时：比它高的柱子会被夹到顶端（宁可少画，也不越出画布），
+   * 非正数 / `NaN` / `Infinity` 视为「没传」——与本仓 `ticks.ts`、`paging.ts`
+   * 对上限归一化的口径一致。
+   */
+  max?: number;
+}
+
+const { data, max } = Astro.props;
+
+/** 非负整数：负数、`NaN`、`Infinity` 一律按 0，小数向下取整（口径同 `ticks.ts`）。 */
+function unitCount(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  const n = Math.floor(value);
+  return n > 0 ? n : 0;
+}
+
+/** 轴顶归一化：未传或不是有效正整数时回落到数据最大值。 */
+function axisTop(given: number | undefined, fallback: number): number {
+  if (given === undefined) return fallback;
+  if (!Number.isFinite(given)) return fallback;
+  const n = Math.floor(given);
+  return n >= 1 ? n : fallback;
+}
+
+/* ---- 几何：全部是整数，坐标里不可能出现长小数，也就不可能印出 NaN ---- */
+
+/** 一个方块的边长（= 一个单位的高度）。 */
+const SQUARE = 8;
+/** 同一根柱子里相邻方块的缝。 */
+const GAP = 2;
+/** 每升高一个单位占的纵向距离。 */
+const ROW = SQUARE + GAP;
+/** 一根柱子占的横向宽度（含左右留白，给柱底文字腾地方）。 */
+const SLOT = 34;
+/** 柱子本身的宽度（方块就画这么宽）。 */
+const BAR = 14;
+/** 柱底文字那一行的高度。 */
+const LABEL_H = 14;
+/** 基线到柱底文字的距离。 */
+const AXIS_GAP = 2;
+/**
+ * 一根柱子最多画几格。
+ *
+ * 存在的理由与归档页的 `ARCHIVE_MAX_TICKS` 相同：**护栏，不是排版目标**。
+ * 上限为 200 件/天（`frontend.maxTasksPerPage`）时，一周就是 1400 格——那会是
+ * 一万六千个 `<rect>`、一百多 KB 的 HTML，换来的是一根谁也数不清的墨柱。
+ *
+ * 40 格（≈ 一周 40 件完成，足够宽裕）之上的柱子**画到顶端为止**；被夹住时
+ * 下面的数值表会从「仅供读屏」变成**可见**的，精确数字一条不少地换了个形式出现。
+ * 与本仓其它上限一致：截断只改变「画几格」，从不改变「是多少」。
+ */
+const MAX_ROWS = 40;
+
+const bars = data.map((item) => ({ label: item.label, value: unitCount(item.value) }));
+const peak = bars.reduce((highest, bar) => (bar.value > highest ? bar.value : highest), 0);
+
+/**
+ * 全是 0（或压根没给数据）就不画图：一排零高度的空槽既占版面又不说什么。
+ * `EmptyState` 而不是空 `<svg>`——一个 `<svg>` 里什么都没有，读屏读到的是一片沉默，
+ * 视力读者看到的是一片空白，两种沉默都让人以为页面坏了。
+ */
+const hasUnits = peak > 0 && bars.length > 0;
+
+const rows = Math.min(axisTop(max, peak), MAX_ROWS);
+const baseline = rows * ROW;
+// 至少留一格的宽度：空数据已经走空状态了，这里只是不让 `viewBox="0 0 0 …"` 有机会出现。
+const width = Math.max(bars.length * SLOT, SLOT);
+const height = baseline + AXIS_GAP + LABEL_H;
+
+/** 有没有柱子因为 `MAX_ROWS` 或调用方的 `max` 被截断——有的话要把数值表亮出来。 */
+const clipped = bars.some((bar) => bar.value > rows);
+
+/**
+ * 图形的可访问名。
+ *
+ * 说清四件事：这是什么图、覆盖哪一段、一共几项、一格代表多少。`role="img"` 之下
+ * 所有 `<text>` 都只是装饰，读屏只会朗读这一句，所以它必须自己把话说完整；
+ * 每个数字的具体读数在下面那张表格里（本组件从不指望图形本身承载数字）。
+ */
+const ariaLabel = [
+  `柱状图：从 ${bars[0]?.label ?? ''} 到 ${bars[bars.length - 1]?.label ?? ''}`,
+  `共 ${bars.length} 项的完成数`,
+  '每格代表 1',
+  `最高 ${peak}`,
+  clipped ? `超过 ${rows} 格的部分封顶未展开` : '',
+]
+  .filter((part) => part !== '')
+  .join('，');
+
+/** 方块左上角横坐标。 */
+function squareX(index: number): number {
+  return index * SLOT + (SLOT - BAR) / 2 + (BAR - SQUARE) / 2;
+}
+
+/** 柱心横坐标（柱底文字居中用）。 */
+function centerX(index: number): number {
+  return index * SLOT + SLOT / 2;
+}
+
+type Square = { x: number; y: number };
+
+/**
+ * 从下往上堆：第 `unit` 格（0 起）的顶边在基线之上的第 `unit + 1` 层。
+ *
+ * `Math.min(bar.value, rows)`：调用方传了比数据更矮的 `max` 时，柱子**画到顶端为止**
+ * ——越出画布的方块会被裁掉，画出来也没人看得见。被夹住的只是「画几格」，
+ * 真实数值照旧逐条列在下面的表格里，所以夹取不会让读者失去数字。
+ */
+const squares: Square[] = [];
+for (const [index, bar] of bars.entries()) {
+  const drawn = Math.min(bar.value, rows);
+  for (let unit = 0; unit < drawn; unit += 1) {
+    squares.push({
+      x: squareX(index),
+      y: baseline - (unit + 1) * ROW + GAP,
+    });
+  }
+}
+---
+
+{
+  !hasUnits ? (
+    <EmptyState
+      title="还没有可以立的柱子"
+      hint="这段时间里没有完成记录。写下几天，再把它们一条条划掉，柱子就会长出来。"
+    />
+  ) : (
+    <div>
+      {/*
+        图形的可访问名说清「长了什么样」，精确数字交给下面那张表格：
+        `role="img"` 让内部的 <text> 一律视为装饰，读屏只会朗读 aria-label，
+        所以柱底那行标签不会被重复朗读，数值也不会被漏掉。
+      */}
+      <svg
+        role="img"
+        aria-label={ariaLabel}
+        viewBox={`0 0 ${width} ${height}`}
+        class="block h-auto max-h-[28rem] w-full text-foreground"
+        preserveAspectRatio="xMidYMid meet"
+      >
+        {squares.map((square) => (
+          <rect
+            x={square.x}
+            y={square.y}
+            width={SQUARE}
+            height={SQUARE}
+            fill="currentColor"
+          />
+        ))}
+
+        <line
+          x1="0"
+          y1={baseline}
+          x2={width}
+          y2={baseline}
+          class="text-border"
+          stroke="currentColor"
+          stroke-width="1"
+          vector-effect="non-scaling-stroke"
+        />
+
+        {bars.map((bar, index) => (
+          <text
+            x={centerX(index)}
+            y={baseline + AXIS_GAP + LABEL_H - 4}
+            text-anchor="middle"
+            font-size="9"
+            class="text-muted-foreground"
+            fill="currentColor"
+          >
+            {bar.label}
+          </text>
+        ))}
+      </svg>
+
+      {/*
+        读屏拿到的必须是数字，不是一个形状：`role="img"` 的图形本身不朗读内容，
+        每一项都在这张表里逐条列着。
+
+        平时对视力读者隐藏（柱子的形状已经说明了问题，再列一遍是重复）；
+        但柱子被封顶时**改成可见**——那一刻图形已经不能说清「到底多少」，
+        数字必须自己站出来。两种情况下读屏拿到的内容完全一样。
+      */}
+      <table class={clipped ? 'mt-3 w-full text-[0.8125rem] tabular-nums' : 'sr-only'}>
+        <caption
+          class:list={[clipped ? 'mb-1 text-left text-[0.75rem] text-muted-foreground' : null]}
+        >
+          图表数值：共 {bars.length} 项，最高 {peak}
+          {clipped ? `；柱子最多画 ${rows} 格，超出的部分看这张表` : ''}
+        </caption>
+
+        <thead class:list={[clipped ? 'text-[0.75rem] text-muted-foreground' : null]}>
+          <tr>
+            <th scope="col" class:list={[clipped ? 'py-1 text-left font-normal' : null]}>项</th>
+            <th scope="col" class:list={[clipped ? 'py-1 text-right font-normal' : null]}>
+              数值
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {bars.map((bar) => (
+            <tr class:list={[clipped ? 'border-t border-border/70' : null]}>
+              <th scope="row" class:list={[clipped ? 'py-1 text-left font-normal' : null]}>
+                {bar.label}
+              </th>
+              <td class:list={[clipped ? 'py-1 text-right' : null]}>{bar.value}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}

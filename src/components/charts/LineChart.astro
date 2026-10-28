@@ -1,0 +1,223 @@
+---
+/**
+ * 折线图：一条 1.5px 的墨线，仅此而已。
+ *
+ * 画法约束（与设计稿一致，改前请三思）：**无区域填充、无阴影、无装饰圆点**。
+ * 折线只表达「走势」，具体某天是多少，看文字列表；加上圆点会让人以为那些点
+ * 是可以点或值得逐个读的，而这张图上唯一可靠的东西是整条线的方向。
+ * 颜色只取设计令牌（`--foreground` 的墨色、`--border` 的轴线），**不出现任何十六进制**。
+ *
+ * 零 JS：本组件只产出静态内联 `<svg>`，没有 `<script>`、没有 `client:*`。
+ */
+import EmptyState from '../EmptyState.astro';
+
+interface Props {
+  /**
+   * 采样点，按时间顺序。`x` 是原样显示的横轴文字（由调用方决定写法），
+   * `y` 是**比例值 0..1**（如完成率），不是百分数。
+   */
+  points: { x: string; y: number }[];
+  /** 画布高度（像素）。缺省 120；非正数 / `NaN` / `Infinity` 视为没传。 */
+  height?: number;
+}
+
+const { points, height: requestedHeight } = Astro.props;
+
+/** 非有限值一律按 0，其余夹进 [0, 1]——图上不会出现 NaN 坐标，也不会冲出画布。 */
+function ratio(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  if (value < 0) return 0;
+  return value > 1 ? 1 : value;
+}
+
+/** 画布高度归一化：只接受 60..320 之间的整数，其余回落到 120。 */
+function canvasHeight(given: number | undefined): number {
+  const DEFAULT = 120;
+  if (given === undefined) return DEFAULT;
+  if (!Number.isFinite(given)) return DEFAULT;
+  const n = Math.round(given);
+  if (n < 60) return 60;
+  return n > 320 ? 320 : n;
+}
+
+/* ---- 几何：画布宽度固定，横轴按点数均分，坐标保留两位小数（不让浮点尾巴印进 HTML） ---- */
+
+const VIEW_W = 360;
+const PAD_LEFT = 30;
+const PAD_RIGHT = 6;
+const PAD_TOP = 8;
+const PAD_BOTTOM = 16;
+/** 轴文字的尺寸（用户单位）。画布等比缩放，桌面端渲染出来约 12px。 */
+const FONT = 8;
+
+const h = canvasHeight(requestedHeight);
+const plotW = VIEW_W - PAD_LEFT - PAD_RIGHT;
+const plotH = h - PAD_TOP - PAD_BOTTOM;
+const baselineY = h - PAD_BOTTOM;
+const topY = PAD_TOP;
+
+/** 保留两位小数：坐标里的浮点尾巴既没用，又让产物 HTML 变得难读。 */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+const samples = points.map((point) => ({ x: point.x, y: ratio(point.y) }));
+const hasPoints = samples.length > 0;
+
+/** 只有一个点时横轴没有跨度，把 `t` 固定为 0，避免除以 0。 */
+function pointX(index: number): number {
+  if (samples.length <= 1) return round2(PAD_LEFT);
+  return round2(PAD_LEFT + (plotW * index) / (samples.length - 1));
+}
+
+function pointY(value: number): number {
+  return round2(baselineY - plotH * value);
+}
+
+/**
+ * 路径：单条 `M/L` 折线。
+ *
+ * 只有一个点时折线退化成一个点、画不出长度（不画装饰圆点，也就不补点），
+ * 但数值仍在下面那张表里——图缺一个像素，数字不能缺。
+ */
+const linePath = samples
+  .map((sample, index) => `${index === 0 ? 'M' : 'L'}${pointX(index)} ${pointY(sample.y)}`)
+  .join(' ');
+
+/** 横轴只标首尾两个日期：90 个日期全标出来会糊成一条墨带。 */
+const firstLabel = samples[0]?.x ?? '';
+const lastLabel = samples[samples.length - 1]?.x ?? '';
+/** 只有一个点时首尾重合，标一次就够（重复标会叠字）。 */
+const showLastLabel = samples.length > 1;
+
+/** 纵轴刻度：0% 与 100%。中间不画网格线——一条线加两个数字已经够读。 */
+const axisLabels = [
+  { label: '100%', y: round2(topY) },
+  { label: '0%', y: round2(baselineY) },
+];
+
+/** 图形的可访问名：覆盖范围、点数、纵轴口径。具体读数在下面的表格里。 */
+const ariaLabel =
+  `折线图：从 ${firstLabel} 到 ${lastLabel} 共 ${samples.length} 个点的每日完成率` +
+  '，纵轴 0% 到 100%';
+---
+
+{
+  !hasPoints ? (
+    <EmptyState
+      title="还没有可以连成线的点"
+      hint="这段时间里没有可以计算的完成率。写下几天，这条线就会从左边开始长。"
+    />
+  ) : (
+    <div>
+      {/*
+        图形的可访问名只说「这是什么东西、跨多少点」；每个点的数值交给下面那张
+        仅供读屏的表格。`role="img"` 之下所有 <text> 都只是装饰，不会被朗读，
+        所以横轴日期与刻度百分数都不重复朗读，数值也不会漏。
+      */}
+      <svg
+        role="img"
+        aria-label={ariaLabel}
+        viewBox={`0 0 ${VIEW_W} ${h}`}
+        class="block h-auto w-full text-foreground"
+      >
+        {/* 轴：底边一条横线，左边一条竖线。纯 <line>，没有刻度线阵。 */}
+        <line
+          x1={PAD_LEFT}
+          y1={baselineY}
+          x2={VIEW_W - PAD_RIGHT}
+          y2={baselineY}
+          class="text-border"
+          stroke="currentColor"
+          stroke-width="1"
+          vector-effect="non-scaling-stroke"
+        />
+        <line
+          x1={PAD_LEFT}
+          y1={topY}
+          x2={PAD_LEFT}
+          y2={baselineY}
+          class="text-border"
+          stroke="currentColor"
+          stroke-width="1"
+          vector-effect="non-scaling-stroke"
+        />
+
+        {/* 纵轴读数：0% 与 100%，贴在左轴外侧。 */}
+        {axisLabels.map((axis) => (
+          <text
+            x={PAD_LEFT - 5}
+            y={axis.y + 3}
+            text-anchor="end"
+            font-size={FONT}
+            class="text-muted-foreground"
+            fill="currentColor"
+          >
+            {axis.label}
+          </text>
+        ))}
+
+        {/* 折线本体：1.5px，圆头圆角只在拐点处，不带填充、不带阴影。
+            `vector-effect` 让 1.5px 在任何缩放下都是 1.5px（viewBox 被拉宽时不跟着变粗）。 */}
+        <path
+          d={linePath}
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linejoin="round"
+          stroke-linecap="round"
+          vector-effect="non-scaling-stroke"
+        />
+
+        {/* 横轴：首尾两个日期，贴着画布两端。 */}
+        <text
+          x={PAD_LEFT}
+          y={h - 4}
+          text-anchor="start"
+          font-size={FONT}
+          class="text-muted-foreground"
+          fill="currentColor"
+        >
+          {firstLabel}
+        </text>
+        {
+          showLastLabel ? (
+            <text
+              x={VIEW_W - PAD_RIGHT}
+              y={h - 4}
+              text-anchor="end"
+              font-size={FONT}
+              class="text-muted-foreground"
+              fill="currentColor"
+            >
+              {lastLabel}
+            </text>
+          ) : null
+        }
+      </svg>
+
+      {/*
+        读屏拿到的必须是数字：`role="img"` 的图形不朗读内部文本，所以每个点的
+        读数逐条列在这张对视力读者隐藏的表里。百分比按 0..1 的比例换算，
+        不保留小数——图上读不出 1% 以下的差别，表格里也不必假装读得出。
+      */}
+      <table class="sr-only">
+        <caption>图表数值：{samples.length} 个点的完成率</caption>
+        <thead>
+          <tr>
+            <th scope="col">日期</th>
+            <th scope="col">完成率</th>
+          </tr>
+        </thead>
+        <tbody>
+          {samples.map((sample) => (
+            <tr>
+              <th scope="row">{sample.x}</th>
+              <td>{Math.round(sample.y * 100)}%</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
