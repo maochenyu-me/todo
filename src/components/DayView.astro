@@ -46,6 +46,22 @@ const { showTimeBlock, showTags, showPriority, maxTasksPerPage } = siteConfig.fr
 
 const isToday = dateKey === todayKey;
 
+/**
+ * 防御：`corrupt` 与「有任务可渲染」**互斥**。
+ *
+ * 页面的两个判定来自两条独立调用（`entry = readDayFromDisk(...)` 与
+ * `corrupt = dayFileState(...) === 'corrupt'`），`data.ts` 已保证两者不会分叉
+ * （见 `dayFileState` 的「不变量」一节并有测试钉住）。但这里再加一道结构性的闸：
+ * 只要真能拿到条目，就**不可能**同时显示「记录读不出来」的横幅——
+ * 那会是一句自相矛盾的话，而且是最难被测试抓到的那种（页面照样构建成功）。
+ *
+ * 若两道防线中的任何一道将来被改坏，这里选择相信**数据**而不是标记：
+ * `corrupt` 降级为 `false`，页面变成正常的一页。理由是宁可少一句诊断，
+ * 也不能出现「边说读不出来边把内容列出来」的页面。
+ */
+const hasTasks = (entry?.tasks.length ?? 0) > 0;
+const isCorrupt = corrupt && !hasTasks;
+
 const tasks: Task[] = entry?.tasks ?? [];
 const summary = daySummary({ date: dateKey, tasks });
 
@@ -83,7 +99,7 @@ const emptyHint = isToday ? '从三件小事开始，写完再一条条划掉。
  * 刻度的空态文案。`ProgressTicks` 的默认值是「今天还没有条目」，只对今天成立，
  * 所以过去的日子必须换一句；读不出来的那天连条数都不知道，也不能说「没有条目」。
  */
-const ticksEmptyLabel = corrupt
+const ticksEmptyLabel = isCorrupt
   ? '记录读不出来，进度未知'
   : isToday
     ? undefined
@@ -102,7 +118,7 @@ const ticksEmptyLabel = corrupt
   <h2 id="day-heading" class="sr-only">{isToday ? '今天的待办' : '这一天的待办'}</h2>
 
   {
-    corrupt ? (
+    isCorrupt ? (
       <EmptyState
         title={isToday ? '今天的记录在，但读不出来' : '这一天的记录在，但读不出来'}
         hint="数据文件存在，但内容不合法或无法解析。修好那个文件后重新构建即可恢复。"
@@ -110,7 +126,7 @@ const ticksEmptyLabel = corrupt
     ) : null
   }
 
-  {isEmpty && !corrupt ? <EmptyState title={emptyTitle} hint={emptyHint} /> : null}
+  {isEmpty && !isCorrupt ? <EmptyState title={emptyTitle} hint={emptyHint} /> : null}
 
   {
     open.length > 0 ? (
@@ -139,7 +155,7 @@ const ticksEmptyLabel = corrupt
   }
 
   {
-    !isEmpty && !corrupt && open.length === 0 && hiddenCount === 0 ? (
+    !isEmpty && !isCorrupt && open.length === 0 && hiddenCount === 0 ? (
       <p class="text-[0.9375rem] text-muted-foreground">
         {isToday ? '今天的事项都划掉了。' : '这一天的事项都划掉了。'}
       </p>

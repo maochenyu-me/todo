@@ -123,13 +123,40 @@ export type DayFileState = 'absent' | 'ok' | 'corrupt';
  * 的扫描，且目录级故障（`EACCES` 整个目录）的 `path` 里没有日期，匹配不上就会退化成
  * 「没有这一天」。这里只探两个候选路径，结论精确、代价恒定。
  *
- * 落点顺序与 `readDayFromDisk` 一致（活跃区优先、损坏不回落归档区）：同一个日期上
- * 「`readDayFromDisk` 返回 null」与「`dayFileState` 返回 `corrupt`」必然同时成立，
- * 页面不会拿到互相矛盾的两种说法。
+ * ## 不变量（无条件成立）
  *
- * 与 `readDayFromDisk` 的一处**有意差别**：文件存在但 `stat` 本身失败（`EACCES`……）
- * 时这里报 `corrupt`。`readDayFromDisk` 把这种情况也当 `null`，是因为它没有错误通道；
- * 而本函数存在的全部意义就是把「读不出来」说出来，读不了的文件绝对不能装成不存在。
+ * 两个函数**遍历同一组候选路径、同一顺序、同一回落规则**，因此：
+ *
+ * - `dayFileState(...) === 'ok'` ⇔ `readDayFromDisk(...) !== null`
+ * - `dayFileState(...) === 'corrupt'` ⇔ 某个候选**确实存在为文件、但内容解析失败**
+ * - `dayFileState(...) === 'absent'` ⇔ `readDayFromDisk(...) === null` 且没有任何候选被成功读到
+ *
+ * 页面是把两条通道拼起来用的（`entry = readDayFromDisk(...)` 与
+ * `corrupt = dayFileState(...) === 'corrupt'`）。两者只要在任何一个场景上分叉，
+ * 页面就会自相矛盾：一边说「记录读不出来」，一边把记录列出来。所以这条不变量是硬约束，
+ * 不是文档修辞；`data.fs-error.test.ts` 里直接断言两条通道的结论一致。
+ *
+ * ## 回落规则：为什么 `stat` 失败要「继续看下一个候选」
+ *
+ * 候选路径可能以三种方式「不算这一天」：不存在（`missing`）、是目录（`dir`）、
+ * `stat` 本身失败（`error`，如 `EACCES`）。三者在这里**一律 `continue`**，
+ * 这正是 `readDayFromDisk` 的 `if (!isFile(path)) continue` 所做的事——`isFile` 对
+ * 前两种和 `stat` 失败都返回 `false`。
+ *
+ * 代价是必须接受一个不太直观的结论：**一个 `stat` 不了的活跃区文件并不会被判成
+ * `corrupt`，而是让位给归档区**（归档区也可读就成了 `ok`，归档区也没有就成了 `absent`）。
+ * 这与 `readDayFromDisk` 的实际读取行为完全一致——它本来就跳过这个候选去读归档区了，
+ * 页面显示的也是归档区那份。若在这里硬报 `corrupt`，页面就会一边喊「读不出来」
+ * 一边把归档区的记录列出来，那才是真正的自相矛盾。
+ *
+ * 语义上也能自圆其说：`corrupt` 的含义是「**找到了**文件但读不出来」，而 `stat` 失败
+ * 连「有没有这个文件」都还没确定，没有资格做这个断言。目录级故障不会被吞掉——
+ * `loadAllEntries` 的 `errors` 通道照常汇报，`[date].astro` 会为它打一条构建期警告。
+ *
+ * **注意**：活跃区「能 `stat` 但解析失败」仍然**阻止**回落到归档区（返回 `corrupt`），
+ * 这是 `readDayFromDisk` 的既定行为，必须保持——用户刚保存的内容被旧快照盖掉，
+ * 比构建失败更糟。两种情形的差别不是随意的：能读到字节却没解析成功，是「这份数据坏了」；
+ * 读不到字节，是「这一份看不了，看下一份」。
  */
 export function dayFileState(
   activeDir: string,
@@ -143,13 +170,11 @@ export function dayFileState(
   ];
   for (const path of candidates) {
     const kind = kindOf(path);
-    // `dir`/`other` 不算「有这一天」：`loadAllEntries` 与 `readDayFromDisk` 也是这个口径
-    // （同名目录会被递归扫描，同名文件才算数据）。这不影响本函数的职责——
-    // 它区分的是「可读的文件 / 读不出的文件 / 没有文件」，不是「路径被什么占着」。
-    if (kind.status === 'missing' || kind.status === 'dir' || kind.status === 'other') continue;
-    // 到这一步文件确实在那儿（或至少 stat 说它在）。此后任何失败都是「坏了」而非「没有」。
-    if (kind.status === 'error') return 'corrupt';
+    // 不存在 / 是目录 / stat 失败：都不算「这一份可读」，看下一个候选。
+    // `dir` 与 `other` 也在这里跳过，与 `loadAllEntries` 的口径一致（同名文件才算数据）。
+    if (kind.status !== 'file') continue;
     const result = readEntryFile(path, dateKey);
+    // 扫描之后文件消失了：与「不存在」同等对待，继续看下一个候选（`readDayFromDisk` 亦然）。
     if (result === 'missing') continue;
     return 'entry' in result ? 'ok' : 'corrupt';
   }
