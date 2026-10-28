@@ -1,0 +1,106 @@
+---
+import { Check } from '@lucide/astro';
+import type { Task } from '../lib/types';
+
+interface Props {
+  task: Task;
+  showTimeBlock: boolean;
+  showTags: boolean;
+  showPriority: boolean;
+}
+
+const { task, showTimeBlock, showTags, showPriority } = Astro.props;
+
+/** 0=高 / 1=中 / 2=低 */
+const PRIORITY_LABEL = { 0: '高', 1: '中', 2: '低' } as const;
+
+const time = showTimeBlock ? task.timeBlock : null;
+const tags = showTags ? task.tags : [];
+const hasMeta = tags.length > 0 || showPriority;
+---
+
+<!--
+  一件待办＝簿纸上的一行。
+  行内顺序固定：时间段 → 勾选字形 → 标题 → 标签 → 优先级。
+  标签与优先级整体靠右，各行的优先级右沿对齐——像簿子右侧那一列栏目。
+-->
+<li class="task-row flex flex-wrap items-baseline gap-x-2.5 gap-y-1 py-2.5">
+  {
+    time ? (
+      <span class="w-[5.25rem] shrink-0 text-[0.8125rem] text-muted-foreground tabular-nums max-sm:order-first max-sm:w-full">
+        {time.start}
+        <span aria-hidden="true">–</span>
+        <span class="sr-only">至</span>
+        {time.end}
+      </span>
+    ) : (
+      <span class="w-[5.25rem] shrink-0 max-sm:hidden" aria-hidden="true" />
+    )
+  }
+
+  <span class="glyph" aria-hidden="true">
+    {task.done ? <Check size={10} stroke-width={3.25} class="text-done" /> : null}
+  </span>
+
+  <span class="min-w-0 flex-1 text-[1rem] leading-snug">
+    {
+      task.done ? (
+        <>
+          <s class="text-muted-foreground">{task.title}</s>
+          <span class="sr-only">已完成</span>
+        </>
+      ) : (
+        task.title
+      )
+    }
+  </span>
+
+  {
+    hasMeta ? (
+      <span class="flex shrink-0 items-baseline gap-x-2.5 text-[0.8125rem]">
+        {tags.length > 0 ? (
+          <span class="flex flex-wrap gap-x-2 text-muted-foreground">
+            {tags.map((tag) => (
+              <span>#{tag}</span>
+            ))}
+          </span>
+        ) : null}
+        {showPriority ? (
+          <span
+            class:list={[
+              'w-[1em] text-center',
+              task.priority === 0
+                ? 'font-medium text-seal'
+                : task.priority === 1
+                  ? 'font-medium text-muted-foreground'
+                  : 'text-muted-foreground',
+            ]}
+          >
+            <span class="sr-only">优先级：</span>
+            {PRIORITY_LABEL[task.priority]}
+          </span>
+        ) : null}
+      </span>
+    ) : null
+  }
+</li>
+
+<style>
+  /* 记录簿的「写的横线」：横线只出现在任务列表内部，不做通栏装饰 */
+  .task-row {
+    border-bottom: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
+  }
+
+  /* 勾选字形：一个手画感的小方框，完成时框内一勾 */
+  .glyph {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 13px;
+    height: 13px;
+    flex-shrink: 0;
+    border: 1px solid var(--muted-foreground);
+    border-radius: 1px;
+    transform: translateY(-1px);
+  }
+</style>

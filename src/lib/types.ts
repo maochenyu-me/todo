@@ -17,3 +17,9 @@ export type Task = {
 };
 
 export type DayEntry = { date: string; tasks: Task[] };
+
+/**
+ * 主导航的键。与 `src/components/Rail.astro` 的导航项一一对应；
+ * 单日页 `/date/[date]` 归入 `today`。
+ */
+export type NavKey = 'today' | 'archive' | 'calendar' | 'tags' | 'stats';

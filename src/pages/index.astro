@@ -1,19 +1,153 @@
 ---
-import "../styles/global.css";
-import { siteConfig } from "../../site.config.ts";
+import '../styles/global.css';
+import { ChevronLeft, ChevronRight } from '@lucide/astro';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import DateStamp from '../components/DateStamp.astro';
+import ProgressTicks from '../components/ProgressTicks.astro';
+import TaskRow from '../components/TaskRow.astro';
+import { addDays, formatMedium, todayInZone } from '../lib/date';
+import type { Task } from '../lib/types';
+import { siteConfig } from '../../site.config.ts';
+
+const today = todayInZone(siteConfig.site.timeZone);
+
+/**
+ * 占位数据：Task 8 接真实数据后整段删除。
+ * 刻意覆盖三种形态——带时间块未完成 / 无时间块高优先级带标签 / 已完成。
+ */
+const tasks: Task[] = [
+  {
+    id: 'k3f9x2',
+    title: '写完归档脚本，让六个月之前的记录自动落档',
+    done: false,
+    completedAt: null,
+    order: 0,
+    priority: 1,
+    tags: ['开发'],
+    note: '',
+    timeBlock: { start: '09:00', end: '10:30' },
+    createdAt: `${today}T08:12:00+08:00`,
+    updatedAt: `${today}T08:12:00+08:00`,
+  },
+  {
+    id: 'm7p1qa',
+    title: '把日期印章的边距再收一点',
+    done: false,
+    completedAt: null,
+    order: 1,
+    priority: 0,
+    tags: ['设计', '前台'],
+    note: '',
+    timeBlock: null,
+    createdAt: `${today}T09:40:00+08:00`,
+    updatedAt: `${today}T09:40:00+08:00`,
+  },
+  {
+    id: 'z2w8cd',
+    title: '跑通一遍构建与类型检查',
+    done: true,
+    completedAt: `${today}T11:05:00+08:00`,
+    order: 2,
+    priority: 2,
+    tags: ['开发'],
+    note: '',
+    timeBlock: { start: '10:30', end: '11:00' },
+    createdAt: `${today}T08:30:00+08:00`,
+    updatedAt: `${today}T11:05:00+08:00`,
+  },
+];
+
+const open = tasks.filter((t) => !t.done);
+const closed = tasks.filter((t) => t.done);
+const { showTimeBlock, showTags, showPriority } = siteConfig.frontend;
+
+const prevKey = addDays(today, -1);
+const nextKey = addDays(today, 1);
 ---
 
-<!doctype html>
-<html lang={siteConfig.site.lang}>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{siteConfig.site.title}</title>
-    <meta name="description" content={siteConfig.site.tagline} />
-  </head>
-  <body>
-    <main>
-      <h1>{siteConfig.site.title}</h1>
-    </main>
-  </body>
-</html>
+<BaseLayout title="今天" activeNav="today">
+  <!-- 页首：印章 ＋ 刻度，全部左对齐。印章是页面上唯一倾斜的东西。 -->
+  <header class="flex flex-wrap items-end gap-x-7 gap-y-5 pb-7">
+    <DateStamp dateKey={today} />
+    <div class="pb-1.5">
+      <ProgressTicks total={tasks.length} done={closed.length} />
+    </div>
+  </header>
+
+  <!-- 任务列表：横线只在这里出现，作为「写的横线」 -->
+  <section aria-labelledby="today-heading">
+    <h2 id="today-heading" class="sr-only">今天的待办</h2>
+
+    {
+      open.length > 0 ? (
+        <div>
+          <div
+            class="flex gap-x-2.5 border-b border-border pb-1.5 text-[0.8125rem] text-muted-foreground max-sm:hidden"
+            aria-hidden="true"
+          >
+            <span class="w-[5.25rem] shrink-0">时间</span>
+            <span class="w-[13px] shrink-0" />
+            <span>事项</span>
+          </div>
+          <ul>
+            {open.map((task) => (
+              <TaskRow
+                task={task}
+                showTimeBlock={showTimeBlock}
+                showTags={showTags}
+                showPriority={showPriority}
+              />
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p class="text-[0.9375rem] text-muted-foreground">今天的事项都划掉了。</p>
+      )
+    }
+
+    {
+      closed.length > 0 ? (
+        <details class="group mt-7">
+          <summary
+            class="flex cursor-pointer list-none items-center gap-1.5 text-[0.8125rem] text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden"
+          >
+            <span class="inline-block transition-transform group-open:rotate-90" aria-hidden="true">
+              <ChevronRight size={13} stroke-width={2} />
+            </span>
+            已完成 {closed.length}
+          </summary>
+          <ul class="mt-2">
+            {closed.map((task) => (
+              <TaskRow
+                task={task}
+                showTimeBlock={showTimeBlock}
+                showTags={showTags}
+                showPriority={showPriority}
+              />
+            ))}
+          </ul>
+        </details>
+      ) : null
+    }
+  </section>
+
+  <!--
+    底部翻阅：相邻两天在 Task 8 接上真实数据后才可点。
+    现在用 span 而非 a —— 不可聚焦、不会被 TAB 走到，但读屏仍能报出日期与「暂无记录」。
+  -->
+  <nav
+    aria-label="按日翻阅"
+    class="mt-11 flex items-center justify-between gap-3 text-[0.8125rem] text-muted-foreground"
+  >
+    <span class="inline-flex items-center gap-0.5">
+      <ChevronLeft size={14} stroke-width={1.75} aria-hidden="true" />
+      <span>{formatMedium(prevKey)}</span>
+      <span class="sr-only">暂无记录</span>
+    </span>
+    <span class="inline-flex items-center gap-0.5">
+      <span>{formatMedium(nextKey)}</span>
+      <span class="sr-only">暂无记录</span>
+      <ChevronRight size={14} stroke-width={1.75} aria-hidden="true" />
+    </span>
+  </nav>
+</BaseLayout>

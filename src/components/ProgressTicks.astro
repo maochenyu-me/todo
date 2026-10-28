@@ -1,0 +1,37 @@
+---
+interface Props {
+  total: number;
+  done: number;
+}
+
+const { total, done } = Astro.props;
+
+// 越界的输入不炸页面：夹到 [0, total]
+const filled = Math.max(0, Math.min(done, total));
+---
+
+<!--
+  进度＝一排小方块刻度，一格一件事，已完成的填墨。
+  勾选语汇，不是圆环、不是渐变条。
+-->
+{
+  total === 0 ? (
+    <p class="text-[0.8125rem] text-muted-foreground">今天还没有条目</p>
+  ) : (
+    <div class="flex flex-col items-start gap-1.5">
+      <ul class="flex flex-wrap gap-[3px]" aria-hidden="true">
+        {Array.from({ length: total }, (_, i) => (
+          <li
+            class:list={[
+              'h-[9px] w-[9px] rounded-[1px] border',
+              i < filled ? 'border-foreground bg-foreground' : 'border-border',
+            ]}
+          />
+        ))}
+      </ul>
+      <p class="text-[0.8125rem] text-muted-foreground">
+        已完成 <span class="font-medium text-foreground">{filled}</span> / {total}
+      </p>
+    </div>
+  )
+}

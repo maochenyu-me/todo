@@ -1,0 +1,78 @@
+---
+import '../styles/global.css';
+import Rail from '../components/Rail.astro';
+import type { NavKey } from '../lib/types';
+import { siteConfig } from '../../site.config.ts';
+
+interface Props {
+  title?: string;
+  description?: string;
+  activeNav?: NavKey;
+}
+
+const { title, description = siteConfig.site.tagline, activeNav } = Astro.props;
+
+const pageTitle = title ? `${title}｜${siteConfig.site.title}` : siteConfig.site.title;
+// canonical 由 site.url + 当前 pathname 拼出。pathname 已含 base，
+// 所以 GH Pages 子路径部署时 canonical 自动跟着走，不需要在这里判断 basePath。
+const canonical = new URL(Astro.url.pathname, siteConfig.site.url).href;
+---
+
+<!doctype html>
+<html lang={siteConfig.site.lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="canonical" href={canonical} />
+    <link rel="alternate" hreflang={siteConfig.site.lang} href={canonical} />
+    <link rel="alternate" hreflang="x-default" href={canonical} />
+    <!-- 全站第一段内联 JS（首帧前跑，避免闪白/闪黑）：三态取 localStorage["todo.theme"]，
+         缺键或非法值一律当 system，再按 prefers-color-scheme 决定是否加 .dark。 -->
+    <script is:inline>(function(){var d=document.documentElement,t;try{t=localStorage.getItem("todo.theme")}catch(e){}if(t!=="light"&&t!=="dark")t="system";var k=t==="dark"||(t==="system"&&matchMedia("(prefers-color-scheme:dark)").matches);d.dataset.theme=t;d.classList.toggle("dark",k);d.style.colorScheme=k?"dark":"light"})()</script>
+  </head>
+  <body class="min-h-dvh bg-background">
+    <a
+      href="#main"
+      class="sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-50 focus:border focus:border-primary focus:bg-card focus:px-3 focus:py-2 focus:text-[0.8125rem] focus:text-foreground"
+      >跳到正文</a
+    >
+    <div class="lg:grid lg:grid-cols-[15rem_minmax(0,1fr)]">
+      <Rail activeNav={activeNav} />
+      <!-- 左对齐、不居中；行宽控制在约 34 个汉字（lg 下 40rem − 2×3rem 内边距） -->
+      <main
+        id="main"
+        class="w-full max-w-[40rem] min-w-0 px-5 pb-24 pt-9 sm:px-8 lg:px-12 lg:pt-14"
+      >
+        <slot />
+      </main>
+    </div>
+  </body>
+</html>
+
+<style is:global>
+  /* 键盘焦点：所有可交互元素共用 --primary 的可见焦点环。
+     明确关掉过渡——焦点环必须立刻出现，不能从文字色渐变过去。 */
+  :focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+    transition: none;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklab, var(--primary) 22%, transparent);
+  }
+
+  /* prefers-reduced-motion：关闭全部过渡、动画与平滑滚动 */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition: none !important;
+      animation: none !important;
+      scroll-behavior: auto !important;
+    }
+  }
+</style>

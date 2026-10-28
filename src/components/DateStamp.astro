@@ -1,0 +1,103 @@
+---
+import { formatLong, parseDateKey, weekdayOf } from '../lib/date';
+
+interface Props {
+  dateKey: string;
+}
+
+const { dateKey } = Astro.props;
+
+const { y, m, d } = parseDateKey(dateKey);
+const pad = (n: number) => String(n).padStart(2, '0');
+const weekday = `周${'日一二三四五六'[weekdayOf(dateKey)]}`;
+---
+
+<!--
+  全站唯一的记忆点：一枚盖在纸上的日期印章。
+  朱红细边框、年月日三行错落、整体逆时针歪 2°。其余一切安静。
+  印章本身 aria-hidden（零碎数字没有语序），紧邻的 sr-only h1 给出完整日期与星期。
+-->
+<div class="stamp -rotate-2 select-none" aria-hidden="true">
+  <span class="stamp-row stamp-year">
+    <span class="stamp-num">{y}</span>
+    <span class="stamp-unit">年</span>
+  </span>
+  <span class="stamp-row stamp-month">
+    <span class="stamp-num">{m}</span>
+    <span class="stamp-unit">月</span>
+  </span>
+  <span class="stamp-row stamp-day">
+    <span class="stamp-num">{pad(d)}</span>
+    <span class="stamp-unit">日</span>
+  </span>
+  <span class="stamp-foot">{weekday}</span>
+</div>
+<h1 class="sr-only">{formatLong(dateKey)}</h1>
+
+<style>
+  .stamp {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 0.55rem 1.15rem 0.5rem 0.95rem;
+    border: 1px solid var(--seal);
+    border-radius: 2px;
+    color: var(--seal);
+    line-height: 1;
+    /* 印章压在纸上：一圈极淡的同色内描边，不用阴影 */
+    box-shadow: 0 0 0 1px color-mix(in oklab, var(--seal) 16%, transparent);
+  }
+
+  .stamp-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.16em;
+  }
+
+  /* 三行错落：年最靠左，月缩半字，日缩一字 */
+  .stamp-month {
+    margin-left: 0.45rem;
+  }
+  .stamp-day {
+    margin-left: 0.9rem;
+  }
+
+  .stamp-num {
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 年最小、月居中、日最大——视线先落在「几号」 */
+  .stamp-year .stamp-num {
+    font-size: 0.9375rem;
+    opacity: 0.75;
+  }
+  .stamp-month .stamp-num {
+    font-size: 1.375rem;
+  }
+  .stamp-day .stamp-num {
+    font-size: clamp(2rem, 5vw, 3.25rem);
+    line-height: 0.95;
+  }
+
+  .stamp-unit {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    opacity: 0.8;
+  }
+  .stamp-day .stamp-unit {
+    font-size: 0.9375rem;
+  }
+
+  .stamp-foot {
+    width: 100%;
+    margin-top: 0.4rem;
+    padding-top: 0.28rem;
+    border-top: 1px solid color-mix(in oklab, var(--seal) 38%, transparent);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    opacity: 0.85;
+  }
+</style>
