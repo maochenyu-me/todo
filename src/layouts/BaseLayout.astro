@@ -8,14 +8,21 @@ interface Props {
   title?: string;
   description?: string;
   activeNav?: NavKey;
+  /**
+   * canonical 的显式覆盖，取值是**已含 base 的站内路径**（如 `withBase('/')`）。
+   *
+   * 只给内容重复的页面用：`/date/<今天>` 与 `/` 渲染同一天，规范地址必须指回 `/`，
+   * 否则同一份内容有两个可索引的 URL。其余页面留空，按当前 pathname 自己算。
+   */
+  canonicalHref?: string;
 }
 
-const { title, description = siteConfig.site.tagline, activeNav } = Astro.props;
+const { title, description = siteConfig.site.tagline, activeNav, canonicalHref } = Astro.props;
 
 const pageTitle = title ? `${title}｜${siteConfig.site.title}` : siteConfig.site.title;
 // canonical 由 site.url + 当前 pathname 拼出。pathname 已含 base，
 // 所以 GH Pages 子路径部署时 canonical 自动跟着走，不需要在这里判断 basePath。
-const canonical = new URL(Astro.url.pathname, siteConfig.site.url).href;
+const canonical = new URL(canonicalHref ?? Astro.url.pathname, siteConfig.site.url).href;
 ---
 
 <!doctype html>

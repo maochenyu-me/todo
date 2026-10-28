@@ -1,0 +1,57 @@
+---
+/**
+ * 单日页 `/date/<YYYY-MM-DD>`：与今天页同版式，只渲染**磁盘上确实有记录**的日期。
+ *
+ * `getStaticPaths` 从 `loadAllEntries` 取全部有数据的日期（已升序、已去重），
+ * 因此不会为空白日期生成成千上万个页面，页面里也永远不需要处理「这一天没文件」。
+ *
+ * canonical：`/date/<今天>` 与 `/` 内容完全相同，规范地址指回 `/`；其余日期指向自身。
+ */
+import type { GetStaticPaths } from 'astro';
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import DayView from '../../components/DayView.astro';
+import { loadAllEntries } from '../../lib/data';
+import { addDays, formatLong, isValidDateKey, todayInZone } from '../../lib/date';
+import { withBase } from '../../lib/urls';
+import { siteConfig } from '../../../site.config.ts';
+
+export const getStaticPaths = (() => {
+  // Astro 会把 getStaticPaths 单独提成一个 chunk，它**看不见**本文件顶层的变量，
+  // 所以配置只能在这里就地读一次。
+  const { activeDir, archiveDir } = siteConfig.data;
+  const { entries } = loadAllEntries(activeDir, archiveDir);
+  // 文件名不一定合法（手改/异常归档），页面路径必须是真日期，否则直接跳过。
+  const withData = new Set(entries.map((entry) => entry.date).filter(isValidDateKey));
+  const byDate = new Map(entries.map((entry) => [entry.date, entry]));
+
+  // 条目随 props 一起交给页面：否则每个日期页都要把整个数据目录重扫一遍。
+  return [...withData].sort().map((dateKey) => ({
+    params: { date: dateKey },
+    props: {
+      dateKey,
+      entry: byDate.get(dateKey) ?? null,
+      prevHasData: withData.has(addDays(dateKey, -1)),
+      nextHasData: withData.has(addDays(dateKey, 1)),
+    },
+  }));
+}) satisfies GetStaticPaths;
+
+const { dateKey, entry, prevHasData, nextHasData } = Astro.props;
+
+// 「今天」的唯一依据：配置里的时区。绝不从本地时区或手写偏移推导。
+const today = todayInZone(siteConfig.site.timeZone);
+
+// 今天另有一个规范地址 `/`，这里只是它的可渲染副本。
+const canonicalHref = dateKey === today ? withBase('/') : withBase(`/date/${dateKey}`);
+---
+
+<BaseLayout title={formatLong(dateKey)} activeNav="today" canonicalHref={canonicalHref}>
+  <DayView
+    dateKey={dateKey}
+    entry={entry}
+    prevHasData={prevHasData}
+    nextHasData={nextHasData}
+    todayKey={today}
+  />
+</BaseLayout>
