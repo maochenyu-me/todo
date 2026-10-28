@@ -21,7 +21,7 @@ import TaskRow from '../../components/TaskRow.astro';
 import { loadAllEntries } from '../../lib/data';
 import { formatMedium } from '../../lib/date';
 import { capTasks } from '../../lib/paging';
-import { collectTags, entriesByTag } from '../../lib/tags';
+import { collectTags, entriesByTag, hasTagPage, tagSegment } from '../../lib/tags';
 import type { TagCount, TagDay } from '../../lib/tags';
 import type { Task } from '../../lib/types';
 import { withBase } from '../../lib/urls';
@@ -29,22 +29,27 @@ import { siteConfig } from '../../../site.config.ts';
 
 export const getStaticPaths = (() => {
   // Astro 会把 getStaticPaths 提成独立 chunk，它**看不见**本文件顶层的任何东西
-  //（连常量也算；Task 8 与 Task 9 各踩过一次），所以配置只能在这里就地读。
+  //（连常量也算；Task 8 与 Task 9 各踩过一次），所以配置与纯函数都只能在这里就地取。
   const { activeDir, archiveDir } = siteConfig.data;
   const { entries } = loadAllEntries(activeDir, archiveDir);
 
   const tags = collectTags(entries, siteConfig.frontend.tagRules);
 
-  return (
-    tags
-      // 双保险：`collectTags` 只在真数到标签时才建键，count 必然 >= 1；
-      // 这一行挡的是「将来有人把 minCount 语义改成 0 也算命中」之类的改动。
-      .filter((item) => item.count > 0)
-      .map(({ tag }) => ({
-        params: { tag },
-        props: { tag, days: entriesByTag(entries, tag), allTags: tags },
-      }))
-  );
+  // 只为「真能拥有页面」的标签建路由：
+  // - `count > 0`：`collectTags` 只在真数到标签时才建键，这条是双保险，
+  //   挡的是「将来有人把 minCount 语义改成 0 也算命中」之类的改动。
+  // - `hasTagPage`：含 `%` 的标签会让 Astro 的路由层抛 `Invalid URL encoding` /
+  //   `NoMatchingStaticPathFound`（实测能整站构建失败），见 `tags.ts` 的说明。
+  //   这类标签仍在索引里显示，只是没有页面、不可点。
+  const routable = tags.filter((item) => item.count > 0 && hasTagPage(item.tag));
+
+  return routable.map(({ tag }) => ({
+    // `params.tag` 用 **`tagSegment()` 预转义后的段**，不用原始标签：
+    // 这样 Astro 的 `sanitizeParams` 对它是恒等变换，产物目录名就与
+    // `tagPath()` 生成的 href 逐字节一致。原始标签随 props 交给页面显示。
+    params: { tag: tagSegment(tag) },
+    props: { tag, days: entriesByTag(entries, tag), allTags: tags },
+  }));
 }) satisfies GetStaticPaths;
 
 interface Props {

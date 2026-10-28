@@ -5,10 +5,15 @@
  * `/tags` 与 `/tags/[tag]` 共用这一份——两处的索引必须是同一批链接、同一个顺序，
  * 否则读者从索引点进某个标签后，回来看到的索引可能少了一项、或者顺序变了。
  *
- * 链接一律经 `tagPath()`（内部先 `encodeURIComponent` 再 `withBase`）：
- * 标签是中文、可能带空格或标点，不编码的话空格会被当成边界、`#` 会把后面变成 fragment。
+ * 链接一律经 `tagPath()`：它按 Astro 的产物命名规则编码（`#`→`%23`、`?`→`%3F`、
+ * `/`→`%2F`，再过 `encodeURI`），所以**路径段完整解码一次**后恰好等于磁盘上的目录名。
+ * 标签是中文、可能带空格或标点，直接把原值塞进 href 会被当成 fragment / query / 层级。
+ *
+ * **没有页面的标签渲染成纯文本，不发死链**：`hasTagPage()` 为假（含 `%` 的标签，
+ * 理由见 `tags.ts`）时，它照样出现在索引里、计数照常，但不可点击——索引里挂一个
+ * 必定 404 的链接比让它静静地以文字形式待着更糟。
  */
-import { tagPath } from '../lib/tags';
+import { hasTagPage, tagPath } from '../lib/tags';
 import type { TagCount } from '../lib/tags';
 
 interface Props {
@@ -18,6 +23,9 @@ interface Props {
 }
 
 const { tags, currentTag } = Astro.props;
+
+/** 两处共用的排版（可点与不可点只差 hover 与下划线）。 */
+const ITEM_CLASS = 'inline-flex items-baseline gap-1 text-[0.875rem]';
 ---
 
 <nav aria-labelledby="tag-index-heading" class="pb-7">
@@ -26,20 +34,36 @@ const { tags, currentTag } = Astro.props;
     {
       tags.map(({ tag, count }) => {
         const isCurrent = tag === currentTag;
+        const label = (
+          <>
+            <span>#{tag}</span>
+            <span class="text-[0.75rem] tabular-nums text-muted-foreground">{count}</span>
+          </>
+        );
+
+        if (!hasTagPage(tag)) {
+          return (
+            <li class={`${ITEM_CLASS} text-muted-foreground`}>
+              {label}
+              <span class="text-[0.75rem]">（无页面）</span>
+            </li>
+          );
+        }
+
         return (
           <li>
             <a
               href={tagPath(tag)}
               aria-current={isCurrent ? 'page' : undefined}
               class:list={[
-                'inline-flex items-baseline gap-1 text-[0.875rem] underline-offset-4 transition-colors hover:underline',
+                ITEM_CLASS,
+                'underline-offset-4 transition-colors hover:underline',
                 isCurrent
                   ? 'font-medium text-foreground'
                   : 'text-muted-foreground hover:text-foreground',
               ]}
             >
-              <span>#{tag}</span>
-              <span class="text-[0.75rem] tabular-nums text-muted-foreground">{count}</span>
+              {label}
             </a>
           </li>
         );

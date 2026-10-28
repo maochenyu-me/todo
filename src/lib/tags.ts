@@ -29,6 +29,29 @@ function normalizeLimit(value: number): number | null {
 }
 
 /**
+ * 该标签能否安全地拥有一个 `tags/<tag>` 页面。
+ *
+ * 目前唯一被排除的是**含 `%`** 的标签。这不是保守，是实测结论：裸 `%` 会让 Astro 的
+ * `validateAndDecodePathname()` 在「反复解码直到稳定」时对不合格的转义序列抛错。
+ * 实测（astro@7.4.2，`pct % sign` 与 `100%` 两个标签）：
+ *
+ * - `pct % sign` → 构建**硬失败**：`NoMatchingStaticPathFound: requested path
+ *   /tags/pct%20%%20sign/`，`dist/` 不产出，整站发布不了；
+ * - `100%` → 页面能产出，但构建日志里打 `Error: Invalid URL encoding`。
+ *
+ * 换句话说 `%` 不是「编码方式选错了」，而是 Astro 的路由层根本不接受这种路径段——
+ * 换任何编码方案都绕不过去（预转义成 `%25` 同样失败）。既然改不了框架，
+ * 就只能让这类标签**不建页**：宁可它没有自己的页面，也不能让一次正常的构建变成红灯。
+ *
+ * 注意这里**不做静默丢弃**：`collectTags` 仍然统计它（它在标签页的索引里、计数照常），
+ * 只是 `getStaticPaths` 不为它生成路由。代价是索引里可能出现一个指向 404 的链接——
+ * 所以 `TagIndex` 对这类标签渲染成**不可点的纯文本**，见 `hasTagPage` 的另一个调用点。
+ */
+export function hasTagPage(tag: string): boolean {
+  return !tag.includes('%');
+}
+
+/**
  * 全站标签统计：`{ tag, count }[]`，按 `count` 降序、同 count 按 `tag` 升序，
  * 过滤掉 `count < minCount` 的标签，再截断到前 `maxVisible` 个。
  *
@@ -38,6 +61,8 @@ function normalizeLimit(value: number): number | null {
  * - **空白标签（`''`、`'   '`）直接忽略**：它会在站点上生成一个 `/tags/` 的空页，
  *   既能撞上其他路由，也没有任何意义。这里不做 trim 合并——标签的规范化是
  *   `validate.ts` 的 `normalizeTask` 的职责，本函数只负责「不把纯空白当成标签」。
+ * - **含 `%` 的标签仍然统计**（理由见 `hasTagPage`）：它在索引里要显示，
+ *   只是没有自己的页面。把它从统计里抹掉等于假装用户没写过这个标签。
  * - 截断发生在**过滤之后**：`minCount` 是质量问题，`maxVisible` 是排版上限，
  *   先按质量筛再取前 N 个，否则会把名额浪费在将被过滤掉的标签上。
  */
@@ -85,18 +110,76 @@ export function entriesByTag(entries: DayEntry[], tag: string): TagDay[] {
 }
 
 /**
- * 标签页的站内路径，**已含 base 且已做百分号编码**。
+ * 把标签转成 `/tags/` 之下的**一层**路径段，规则与 Astro 的产物命名对齐。
  *
- * 为什么要编码后再交给 `withBase`：`withBase` 只负责加 base 前缀，不做百分号编码；
- * 而标签是中文、可能带空格或标点。不编码的话，`我的 计划` 里的空格会被浏览器当成
- * 边界处理，`a/b` 会凭空多出一层路径，`#号` 里的 `#` 会把后面整段变成 fragment。
+ * ## 为什么不能直接用 `encodeURIComponent`（这是 404 的根因）
  *
- * `encodeURIComponent` 同时把 `/` 编成 `%2F`，所以一个标签永远只占一层路径。
- * `getStaticPaths` 用 `params: { tag }`（**未编码**的原值）产出页面；Astro 会把
- * 原始标签编码进文件名，访问时再解码回原值——两条路径在这里对上，因此页面里的
- * 链接与构建出来的文件是同一串字节。`tags.test.ts` 与构建验证都钉住了这条往返。
+ * 实测出来的 Astro 产物命名流程（`astro@7.4.2`）：
+ *
+ * 1. `sanitizeParams()`（`dist/core/routing/generator.js`）对每个动态参数做
+ *    `value.normalize().replace(/#/g, "%23").replace(/\?/g, "%3F")`；
+ * 2. 拼出 `pathname`（其中的 `%` 是**字面百分号**）；
+ * 3. 写盘前 `encodeURI(pathname)` 把 `%` 转成 `%25`；
+ * 4. `fileURLToPath()` 对 URL 路径做一次百分号解码。
+ *
+ * 第 3、4 步互为逆运算，所以 **产物目录名恰好等于第 1 步的输出**（真实构建逐字验证）：
+ *
+ * | 标签 | 产物目录名 |
+ * |---|---|
+ * | `C#` | `C%23` |
+ * | `#号` | `%23号` |
+ * | `a?b` | `a%3Fb` |
+ * | `工作` | `工作` |
+ * | `100%` | `100%` |
+ *
+ * 浏览器请求只会被解码**一次**，所以 href 必须满足 `decodeURI(href) === 产物目录名`。
+ * 若拿 `encodeURIComponent(tag)` 当 href，`#号` 得到 `/tags/%23%E5%8F%B7`，解码一次是
+ * `#号`，而磁盘上找的是 `%23号` —— **404**。`C#`、`a?b` 同理。
+ *
+ * ## 只转 `#`、`?`、`/`，**不转 `%`**
+ *
+ * - `#`→`%23`、`?`→`%3F`：与 `sanitizeParams` 同规则。预转义之后 Astro 那一步对我们的
+ *   入参是**恒等变换**，`params.tag` 与磁盘目录名因此是同一个字符串——一致性是
+ *   构造出来的，不是两处各写一遍再祈祷相等。
+ * - `/`→`%2F`：`sanitizeParams` **不管** `/`。若不转，`params: { tag: 'a/b' }` 会生成
+ *   `/tags/a/b` 这个两段 URL，配不上单段的 `[tag]` 路由，构建直接抛
+ *   `TypeError: Missing parameter: tag`（实测，整站构建失败）。转成 `%2F` 后标签
+ *   始终只占一层。
+ * - `%` **保持原样**。初版曾把它预转义成 `%25`，构建立刻报
+ *   `NoMatchingStaticPathFound: ... requested path /tags/100%/`：Astro 的
+ *   `validateAndDecodePathname()` 会**反复解码直到稳定**，`100%25` 被多解一层成
+ *   `100%`，与 `getStaticPaths` 的键对不上。保持原样时 `100%` 走 `sanitizeParams`
+ *   的恒等路径，实测构建成功、目录名就是 `100%`。
+ *
+ * `%` 不转不会造成两个标签撞同一个目录：`100%` → 目录 `100%`、href `100%25`；
+ * `100%25` → 目录 `100%25`、href `100%2525`。目录与链接都不同，各自都能命中。
+ */
+export function tagSegment(tag: string): string {
+  return tag
+    .normalize()
+    .replace(/#/g, '%23')
+    .replace(/\?/g, '%3F')
+    .replace(/\//g, '%2F');
+}
+
+/**
+ * 标签页的站内路径，**已含 base 且已按 Astro 的产物命名做过编码**。
+ *
+ * 编码全部交给 `tagSegment()`（理由见那里），这里只负责拼到 `/tags/` 后面、
+ * 再过一次 `encodeURI` 把非 ASCII、空格等路径内非法字符转掉，最后加 base。
+ *
+ * 用 `encodeURI` 而非 `encodeURIComponent`：它保留 `&`、`+`、`=` 等路径内合法字符，
+ * 与 Astro 写产物时的 `encodeURI(pathname)` 同构。`/` 已在 `tagSegment()` 里转义，
+ * 不会漏成层级。
+ *
+ * 判据是「**路径段完整解码一次**后等于磁盘目录名」：
+ * `decodeURIComponent(tagPath(tag).slice('/tags/'.length)) === 产物目录名`。
+ * 别用 `decodeURI` 去验——它**不解** `%23`/`%3F` 这类保留字符的转义，会给出
+ * `%23号` 这种「看起来正好等于目录名」的假绿（旧的错误实现就是这么蒙混过关的）。
+ * `tags.test.ts` 用的是 `decodeURIComponent`，并用 Astro 自己的 `getRouteGenerator`
+ * 算产物目录名。
  */
 export function tagPath(tag: string, base?: string): string {
-  const path = `/tags/${encodeURIComponent(tag)}`;
+  const path = encodeURI(`/tags/${tagSegment(tag)}`);
   return base === undefined ? withBase(path) : withBase(path, base);
 }

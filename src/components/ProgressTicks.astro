@@ -1,4 +1,11 @@
 ---
+/**
+ * 进度＝一排小方块刻度，一格一件事，已完成的填墨。勾选语汇，不是圆环、不是渐变条。
+ *
+ * 本组件零逻辑：画法全部由 `planTicks()` 算好（上限、比例、病态输入都在那里有单测）。
+ */
+import { planTicks } from '../lib/ticks';
+
 interface Props {
   total: number;
   done: number;
@@ -9,35 +16,59 @@ interface Props {
    * 自己画的是哪一天，把「今天」写死在组件里，过去的日子就会说错话。
    */
   emptyLabel?: string;
+  /**
+   * 最多画几个格子。不传＝全画（单日页的既有行为，一点没变）。
+   *
+   * 存在的理由只有一处：**归档页一屏要扫很多天**。一天 200 条任务就会往一行里塞
+   * 200 个方块，把「逐日扫视」的版面彻底撑坏——而那正是归档页唯一的用途。
+   * 归档页传一个小值，被省掉的部分用 `+N` 紧凑标出，精确的 `done / total` 照常写在
+   * 下面那句文字里，所以截断不会让读者丢掉数字。
+   *
+   * 非正数 / `NaN` / `Infinity` 视为「不限」，与 `paging.ts` 的 `capTasks` 同口径。
+   */
+  maxTicks?: number;
 }
 
-const { total, done, emptyLabel = '今天还没有条目' } = Astro.props;
+const { total, done, emptyLabel = '今天还没有条目', maxTicks } = Astro.props;
 
-// 越界的输入不炸页面：夹到 [0, total]
-const filled = Math.max(0, Math.min(done, total));
+const plan = planTicks(total, done, maxTicks);
 ---
 
-<!--
-  进度＝一排小方块刻度，一格一件事，已完成的填墨。
-  勾选语汇，不是圆环、不是渐变条。
--->
 {
   total === 0 ? (
     <p class="text-[0.8125rem] text-muted-foreground">{emptyLabel}</p>
   ) : (
     <div class="flex flex-col items-start gap-1.5">
-      <ul class="flex flex-wrap gap-[3px]" aria-hidden="true">
-        {Array.from({ length: total }, (_, i) => (
-          <li
-            class:list={[
-              'h-[9px] w-[9px] rounded-[1px] border',
-              i < filled ? 'border-foreground bg-foreground' : 'border-border',
-            ]}
-          />
-        ))}
-      </ul>
+      <div class="flex flex-wrap items-center gap-[3px]">
+        <ul class="flex flex-wrap gap-[3px]" aria-hidden="true">
+          {Array.from({ length: plan.shown }, (_, i) => (
+            <li
+              class:list={[
+                'h-[9px] w-[9px] rounded-[1px] border',
+                i < plan.filled ? 'border-foreground bg-foreground' : 'border-border',
+              ]}
+            />
+          ))}
+        </ul>
+        {/*
+          截断标记：+N 直接跟在最后一格后面，读屏读作「另有 N 条未画出」。
+          它是 aria-hidden 之外的**有意义**内容，所以不加 aria-hidden——
+          下面那句文字虽然给了精确数字，但读者第一眼看到的是这排格子。
+        */}
+        {plan.overflow > 0 ? (
+          <span class="text-[0.75rem] tabular-nums text-muted-foreground">
+            <span aria-hidden="true">+{plan.overflow}</span>
+            <span class="sr-only">，另有 {plan.overflow} 条未画出</span>
+          </span>
+        ) : null}
+      </div>
+      {/*
+        精确数字始终按**真实的 done / total** 报，与 maxTicks 无关：
+        截断只改变「画几格」，从不改变「完成了多少」。这里的 `done` 也要夹一次，
+        免得坏数据把「已完成 5 / 3」这种话印到页面上。
+      */}
       <p class="text-[0.8125rem] text-muted-foreground">
-        已完成 <span class="font-medium text-foreground">{filled}</span> / {total}
+        已完成 <span class="font-medium text-foreground">{Math.max(0, Math.min(done, total))}</span> / {total}
       </p>
     </div>
   )
