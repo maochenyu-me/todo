@@ -1,0 +1,44 @@
+---
+/**
+ * 标签索引页 `/tags`。
+ *
+ * 为什么这个页面必须存在：`Rail.astro` 的「标签」导航项在第 7 个任务里就指向 `/tags`，
+ * 而 `/tags/[tag]` 只是某个标签的页面——少了这一页，全站导航里就有一个永远 404 的入口。
+ * 页面本身极薄：只有一份标签索引（最多 `maxVisible` 个），点击去各个标签页。
+ *
+ * 索引与 `/tags/[tag]` 页顶部的那份是同一个组件、同一批数据（`collectTags`），
+ * 所以两处的顺序与条目一致。
+ */
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import EmptyState from '../../components/EmptyState.astro';
+import TagIndex from '../../components/TagIndex.astro';
+import { loadAllEntries } from '../../lib/data';
+import { collectTags } from '../../lib/tags';
+import { siteConfig } from '../../../site.config.ts';
+
+const { activeDir, archiveDir } = siteConfig.data;
+const { entries, errors } = loadAllEntries(activeDir, archiveDir);
+
+for (const error of errors) {
+  console.warn(`[标签页] 读取数据时出错，这些标签不会出现在索引里：${error.path} —— ${error.message}`);
+}
+
+const tags = collectTags(entries, siteConfig.frontend.tagRules);
+---
+
+<BaseLayout title="标签" activeNav="tags">
+  <header class="pb-7">
+    <h1 class="text-[1.375rem] font-semibold tracking-[-0.01em] text-foreground">标签</h1>
+    <p class="mt-1.5 text-[0.8125rem] text-muted-foreground">
+      按标签回看某一类事被提起过多少次。
+    </p>
+  </header>
+
+  {
+    tags.length === 0 ? (
+      <EmptyState title="还没有任何标签" hint="给一条待办打上标签，它就会出现在这里。" />
+    ) : (
+      <TagIndex tags={tags} />
+    )
+  }
+</BaseLayout>

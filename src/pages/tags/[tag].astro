@@ -1,0 +1,142 @@
+---
+/**
+ * 标签页 `/tags/<tag>`：该标签下的历史任务**按日倒序**，每一天挂一个日期小标签在左。
+ *
+ * `getStaticPaths` 来自 `collectTags()` 的结果——也就是说：
+ * - 少于 `minCount` 条的标签**不建页**（spec 明写）；
+ * - 超出 `maxVisible` 的标签同样不建页：索引里看不到的标签不该有一个只有地址栏知道的页面，
+ *   否则就出现「任何入口都找不到、但手输 URL 能打开」的孤儿页。
+ *
+ * **URL 编码**：标签是中文、可能带空格或标点。`params.tag` 传的是**未编码的原值**，
+ * Astro 把它编码进产物路径；页面里的链接走 `tagPath()`（先 `encodeURIComponent` 再
+ * `withBase`）。两条路径因此指向同一串字节——构建验证对一个纯中文标签和一个含空格的
+ * 标签各做了一次往返确认。
+ */
+import type { GetStaticPaths } from 'astro';
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import EmptyState from '../../components/EmptyState.astro';
+import TagIndex from '../../components/TagIndex.astro';
+import TaskRow from '../../components/TaskRow.astro';
+import { loadAllEntries } from '../../lib/data';
+import { formatMedium } from '../../lib/date';
+import { capTasks } from '../../lib/paging';
+import { collectTags, entriesByTag } from '../../lib/tags';
+import type { TagCount, TagDay } from '../../lib/tags';
+import type { Task } from '../../lib/types';
+import { withBase } from '../../lib/urls';
+import { siteConfig } from '../../../site.config.ts';
+
+export const getStaticPaths = (() => {
+  // Astro 会把 getStaticPaths 提成独立 chunk，它**看不见**本文件顶层的任何东西
+  //（连常量也算；Task 8 与 Task 9 各踩过一次），所以配置只能在这里就地读。
+  const { activeDir, archiveDir } = siteConfig.data;
+  const { entries } = loadAllEntries(activeDir, archiveDir);
+
+  const tags = collectTags(entries, siteConfig.frontend.tagRules);
+
+  return (
+    tags
+      // 双保险：`collectTags` 只在真数到标签时才建键，count 必然 >= 1；
+      // 这一行挡的是「将来有人把 minCount 语义改成 0 也算命中」之类的改动。
+      .filter((item) => item.count > 0)
+      .map(({ tag }) => ({
+        params: { tag },
+        props: { tag, days: entriesByTag(entries, tag), allTags: tags },
+      }))
+  );
+}) satisfies GetStaticPaths;
+
+interface Props {
+  tag: string;
+  days: TagDay[];
+  allTags: TagCount[];
+}
+
+const { tag, days, allTags } = Astro.props;
+
+const { showTimeBlock, showTags, showPriority, maxTasksPerPage } = siteConfig.frontend;
+
+/**
+ * 单页上限在标签页同样生效，而且这里更容易被撑爆：标签是**跨全部历史**聚合的，
+ * 一个常用标签几年下来能攒出上千条。口径与单日页一致（`capTasks` 的「非正数即不限」），
+ * 超出时如实报出还剩多少条，绝不静默截断。
+ */
+const flats: { date: string; task: Task }[] = days.flatMap((day) =>
+  day.tasks.map((task) => ({ date: day.date, task })),
+);
+const capped = capTasks(
+  flats.map((flat) => flat.task),
+  maxTasksPerPage,
+);
+const shown = flats.slice(0, capped.shown.length);
+const hiddenCount = flats.length - shown.length;
+
+// 按日重新分组（保持「最新的一天在最前」与当天原有顺序）。
+const shownDays: { date: string; tasks: Task[] }[] = [];
+for (const flat of shown) {
+  const last = shownDays.at(-1);
+  if (last && last.date === flat.date) last.tasks.push(flat.task);
+  else shownDays.push({ date: flat.date, tasks: [flat.task] });
+}
+
+/**
+ * 日期标签指向 `/date/<key>`——**今天也不例外**，理由与归档页/月历相同：
+ * 这是「按日期列举」的视角，读者点的是那一个具体日子。
+ */
+function dayHref(dateKey: string): string {
+  return withBase(`/date/${dateKey}`);
+}
+---
+
+<BaseLayout title={`#${tag}`} activeNav="tags">
+  <header class="pb-6">
+    <h1 class="text-[1.375rem] font-semibold tracking-[-0.01em] text-foreground">
+      <span class="text-muted-foreground">#</span>{tag}
+    </h1>
+    <p class="mt-1.5 text-[0.8125rem] text-muted-foreground">
+      带着这个标签的事，按日期从新到旧排开。
+    </p>
+  </header>
+
+  <TagIndex tags={allTags} currentTag={tag} />
+
+  {
+    shownDays.length === 0 ? (
+      <EmptyState title="这个标签下还没有事" hint="回到今天，给一条待办打上它。" />
+    ) : (
+      <div>
+        {shownDays.map((day) => (
+          <section class="grid gap-x-4 gap-y-1 border-t border-border py-4 sm:grid-cols-[6.5rem_minmax(0,1fr)]">
+            <h2 class="text-[0.8125rem] font-normal">
+              <a
+                href={dayHref(day.date)}
+                class="tabular-nums text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
+              >
+                {formatMedium(day.date)}
+              </a>
+            </h2>
+            <ul>
+              {day.tasks.map((task) => (
+                <TaskRow
+                  task={task}
+                  showTimeBlock={showTimeBlock}
+                  showTags={showTags}
+                  showPriority={showPriority}
+                />
+              ))}
+            </ul>
+          </section>
+        ))}
+      </div>
+    )
+  }
+
+  {
+    hiddenCount > 0 && capped.cap !== null ? (
+      <p class="mt-4 text-[0.8125rem] text-muted-foreground">
+        另有 {hiddenCount} 条超出单页显示上限（{capped.cap} 条），此处未显示。
+      </p>
+    ) : null
+  }
+</BaseLayout>

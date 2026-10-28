@@ -1,0 +1,87 @@
+---
+/**
+ * 月历页 `/calendar/[month]`：为**有数据的每一个月** ＋ 当前月各生成一页。
+ *
+ * 月份键格式 `YYYY-MM`。`calendar/index.astro` 直接渲染「最新有数据的月份」，
+ * 两个页面共用 `CalendarMonth.astro` 那一份版面。
+ *
+ * 为什么不用重定向：静态站的重定向要么靠 `<meta http-equiv="refresh">`（对读屏、
+ * 对「后退」都不友好），要么靠托管平台的规则文件（依赖部署环境）。直接渲染等于
+ * 「`/calendar` 就是最新那个月的页面」——零机制、零 JS、零平台依赖。
+ *
+ * canonical：`/calendar` 与 `/calendar/<最新有数据的月份>` 内容完全相同，
+ * 规范地址指向前者；其余月份指向自身。
+ */
+import type { GetStaticPaths } from 'astro';
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import CalendarMonth from '../../components/CalendarMonth.astro';
+import type { DayCell } from '../../components/CalendarMonth.astro';
+import { loadAllEntries } from '../../lib/data';
+import { formatYearMonth, todayInZone } from '../../lib/date';
+import { daysInMonth, latestDataMonth, monthNeighbors, monthStart, monthsWithPages } from '../../lib/months';
+import { withBase } from '../../lib/urls';
+import { siteConfig } from '../../../site.config.ts';
+
+export const getStaticPaths = (() => {
+  // Astro 会把 getStaticPaths 提成独立 chunk，它**看不见**本文件顶层的任何东西
+  //（连常量也算；Task 8 与 Task 9 各踩过一次），所以配置与派生量都只能在这里就地算。
+  const { activeDir, archiveDir } = siteConfig.data;
+  const todayKey = todayInZone(siteConfig.site.timeZone);
+  const { entries } = loadAllEntries(activeDir, archiveDir);
+
+  const months = monthsWithPages(entries, todayKey);
+  // 与 `calendar/index.astro` 用**同一个函数**求「默认渲染哪个月」：
+  // 两处各算一遍一旦分叉，就会出现「/calendar 显示 10 月，却由 1 月那份指着它」。
+  const latestMonthKey = latestDataMonth(entries, todayKey);
+
+  return months.map((monthKey) => ({
+    params: { month: monthKey },
+    props: {
+      monthKey,
+      days: daysInMonth(entries, monthKey),
+      todayKey,
+      latestMonthKey,
+      months,
+    },
+  }));
+}) satisfies GetStaticPaths;
+
+interface Props {
+  monthKey: string;
+  days: DayCell[];
+  todayKey: string;
+  latestMonthKey: string;
+  /** 全部「有页面」的月份，用于算上一个/下一个可翻的月份（不指向不存在的页）。 */
+  months: string[];
+}
+
+const { monthKey, days, todayKey, latestMonthKey, months } = Astro.props;
+
+const { weekStartsOn } = siteConfig.frontend;
+
+// 翻月只在「真的有页面」的月份之间走，避免指向 404。
+const { prev, next } = monthNeighbors(months, monthKey);
+
+// `/calendar` 渲染的就是最新那个月，两者内容一致 → canonical 指回 `/calendar/`。
+// 结尾斜杠不能省：`calendar/index.astro` 的 canonical 是由 pathname 推出的
+// `.../calendar/`，这里少一个斜杠就会让同一份内容出现两个不同的规范地址字符串。
+const canonicalHref =
+  monthKey === latestMonthKey ? withBase('/calendar/') : withBase(`/calendar/${monthKey}`);
+---
+
+<BaseLayout
+  title={formatYearMonth(monthStart(monthKey))}
+  activeNav="calendar"
+  canonicalHref={canonicalHref}
+>
+  <CalendarMonth
+    monthKey={monthKey}
+    days={days}
+    todayKey={todayKey}
+    weekStartsOn={weekStartsOn}
+    prevMonthKey={prev}
+    nextMonthKey={next}
+    latestMonthKey={latestMonthKey}
+  />
+</BaseLayout>

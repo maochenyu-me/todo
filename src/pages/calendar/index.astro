@@ -1,0 +1,53 @@
+---
+/**
+ * 月历入口 `/calendar`：**直接渲染最新有数据的那一个月**（一条数据都没有时渲染当前月）。
+ *
+ * 为什么不用重定向：
+ * - `<meta http-equiv="refresh">` 对读屏、对浏览器「后退」都不友好，还会让页面闪一下；
+ * - 托管平台的规则文件把「这个月是哪个」这件事挪到了构建产物之外，本地预览与线上就不一致。
+ *
+ * 直接渲染的代价是 `/calendar` 与 `/calendar/<最新月>` 内容重复，所以 `[month].astro`
+ * 会给最新那个月把 canonical 指回 `/calendar` —— 内容重复但可索引地址只有一个。
+ *
+ * 与 `[month].astro` 共用 `CalendarMonth.astro`，两个页面的格子必须逐字节一致，
+ * 否则在月之间来回切换会看到两套排版。
+ */
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import CalendarMonth from '../../components/CalendarMonth.astro';
+import { loadAllEntries } from '../../lib/data';
+import { formatYearMonth, todayInZone } from '../../lib/date';
+import {
+  daysInMonth,
+  latestDataMonth,
+  monthNeighbors,
+  monthStart,
+  monthsWithPages,
+} from '../../lib/months';
+import { siteConfig } from '../../../site.config.ts';
+
+const { activeDir, archiveDir } = siteConfig.data;
+const { entries, errors } = loadAllEntries(activeDir, archiveDir);
+
+for (const error of errors) {
+  console.warn(`[月历页] 读取数据时出错，该部分不会出现在月历里：${error.path} —— ${error.message}`);
+}
+
+const todayKey = todayInZone(siteConfig.site.timeZone);
+const months = monthsWithPages(entries, todayKey);
+const latestMonthKey = latestDataMonth(entries, todayKey);
+
+const { weekStartsOn } = siteConfig.frontend;
+const { prev, next } = monthNeighbors(months, latestMonthKey);
+---
+
+<BaseLayout title={formatYearMonth(monthStart(latestMonthKey))} activeNav="calendar">
+  <CalendarMonth
+    monthKey={latestMonthKey}
+    days={daysInMonth(entries, latestMonthKey)}
+    todayKey={todayKey}
+    weekStartsOn={weekStartsOn}
+    prevMonthKey={prev}
+    nextMonthKey={next}
+    latestMonthKey={latestMonthKey}
+  />
+</BaseLayout>

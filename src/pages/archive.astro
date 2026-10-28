@@ -1,0 +1,160 @@
+---
+/**
+ * 归档页 `/archive`：**连续表，不是卡片网格**。
+ *
+ * 结构：左侧年份锚点（桌面 sticky），右侧按年月分组的连续表；
+ * 每行只有 `日期 | 完成 N/M | 细刻度`——后两项正是 `ProgressTicks` 的整份输出
+ * （一排小方块刻度 + 一句「已完成 N / M」），所以这里把整个组件放进同一个单元格，
+ * 不再手抄一份数字：同一行里把同一组数字渲染两遍，读屏会把它们各读一次，
+ * 视觉上也是重复的栏目。
+ *
+ * **不输出任何任务标题**——这是 spec 明写的性能护栏，T18 的构建测试会 grep 产物
+ * HTML 断言标题字符串不存在。三层保证标题进不来，不只靠「我没写那一行」：
+ * 1. 数据层：`groupByYearMonth()` 的返回结构里根本没有 `title` 字段（只有 date/total/done）。
+ * 2. 本页不 import 也不使用 `TaskRow`（标题只在那里出现），且从不遍历 `entry.tasks`。
+ * 3. `ProgressTicks` 只吃 `total` / `done` 两个数字，拿不到标题。
+ *
+ * **无数据的日期不是行**：只列出磁盘上确实有文件的日子，不按 1..31 铺满。
+ * 方案（continuous table，无数据日期不生成行）优先于 spec 早期措辞里「灰色占位」的说法
+ * ——那说的是「铺满整月」的月份视图，而这里按年月分组的连续表本来就只该有记录的日子。
+ *
+ * 零 JS：没有筛选器、没有折叠面板。
+ */
+import BaseLayout from '../layouts/BaseLayout.astro';
+import EmptyState from '../components/EmptyState.astro';
+import ProgressTicks from '../components/ProgressTicks.astro';
+import { loadAllEntries } from '../lib/data';
+import { formatMedium, formatYearMonth } from '../lib/date';
+import { groupByYearMonth, monthStart } from '../lib/months';
+import { withBase } from '../lib/urls';
+import { siteConfig } from '../../site.config.ts';
+
+const { activeDir, archiveDir } = siteConfig.data;
+const { entries, errors } = loadAllEntries(activeDir, archiveDir);
+
+// 坏文件不能静默吞掉：归档页是全站唯一「按年月扫全站」的地方，它最该把这件事喊出来。
+// 构建照常继续（既定的「坏文件不中断构建」），但不许悄悄少一行。
+for (const error of errors) {
+  console.warn(`[归档页] 读取数据时出错，这部分不会出现在归档表中：${error.path} —— ${error.message}`);
+}
+
+const groups = groupByYearMonth(entries);
+const monthCount = groups.reduce((sum, year) => sum + year.months.length, 0);
+const dayCount = groups.reduce(
+  (sum, year) => sum + year.months.reduce((s, month) => s + month.days.length, 0),
+  0,
+);
+
+/**
+ * 年份锚点：同页内的 `#year-<YYYY>`，不是路由，所以**不经 `withBase`**
+ * ——`withBase` 是给站内路径加 base 的，锚点跟着 URL 走，加了前缀反而会指错。
+ */
+function yearAnchor(year: string): string {
+  return `#year-${year}`;
+}
+
+/**
+ * 一天在那一天的页面里——**一律 `/date/<key>`，今天也不例外**。
+ *
+ * 这里与 Task 8 的 `DayView.hrefOf()` 有意不同：那边把今天指回 `/`（避免同一份内容
+ * 有两个入口）。归档表/月历/标签页都是**按日期列举**的视角，读者点的是「这一天」这个
+ * 具体日子，不是「今天」这个入口；而 `/date/<今天>` 是真实生成的页面，它的 canonical
+ * 已经指回 `/`，所以不存在重复内容的索引问题。两套写法各自的理由都写在代码里。
+ */
+function dayHref(dateKey: string): string {
+  return withBase(`/date/${dateKey}`);
+}
+---
+
+<BaseLayout title="归档" activeNav="archive">
+  <header class="pb-7">
+    <h1 class="text-[1.375rem] font-semibold tracking-[-0.01em] text-foreground">归档</h1>
+    <p class="mt-1.5 text-[0.8125rem] text-muted-foreground">
+      按年月排成一张连续的表，只数完成了几条，不列出事项本身。
+    </p>
+  </header>
+
+  {
+    groups.length === 0 ? (
+      <EmptyState title="还没有任何记录" hint="写下第一天之后，这里会按年月长出第一行。" />
+    ) : (
+      <div class="lg:grid lg:grid-cols-[5rem_minmax(0,1fr)] lg:gap-x-6">
+        {/* 年份锚点：桌面常驻左侧，窄屏横向排在顶部。窄屏不给 sticky——那会吃掉本就不多的纵向空间。 */}
+        <nav aria-label="按年份跳转" class="mb-5 lg:mb-0">
+          <ul class="flex flex-wrap gap-x-4 gap-y-1 lg:sticky lg:top-10 lg:block lg:space-y-1">
+            {groups.map((year) => (
+              <li class="lg:border-l-2 lg:border-border lg:pl-2.5">
+                <a
+                  href={yearAnchor(year.year)}
+                  class="text-[0.8125rem] tabular-nums text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+                >
+                  {year.year}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </nav>
+
+        <div class="border-t border-border">
+          {groups.map((year) => (
+            <section id={`year-${year.year}`} class="scroll-mt-10 pb-4">
+              <h2 class="pt-4 pb-1 text-[1rem] font-semibold tabular-nums tracking-[-0.01em] text-foreground">
+                {year.year}
+                <span class="ml-1 text-[0.8125rem] font-normal text-muted-foreground">年</span>
+              </h2>
+
+              {year.months.map((month) => (
+                <div class="mt-3">
+                  <h3 class="pb-1 text-[0.8125rem] font-medium text-muted-foreground">
+                    {formatYearMonth(monthStart(month.monthKey))}
+                  </h3>
+
+                  <table class="w-full border-collapse text-[0.875rem]">
+                    <caption class="sr-only">
+                      {formatYearMonth(monthStart(month.monthKey))}每天的完成情况
+                    </caption>
+                    <thead class="sr-only">
+                      <tr>
+                        <th scope="col">日期</th>
+                        <th scope="col">完成情况</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {month.days.map((day) => (
+                        <tr class="border-b border-border/70 align-top">
+                          <th scope="row" class="w-[9.5rem] py-2.5 pr-3 text-left font-normal">
+                            <a
+                              href={dayHref(day.date)}
+                              class="tabular-nums text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
+                            >
+                              {formatMedium(day.date)}
+                            </a>
+                          </th>
+                          <td class="py-2.5">
+                            <ProgressTicks
+                              total={day.total}
+                              done={day.done}
+                              emptyLabel="没有条目"
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </section>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  {
+    groups.length > 0 ? (
+      <p class="mt-4 text-[0.8125rem] text-muted-foreground">
+        共 {monthCount} 个月、{dayCount} 天有记录。
+      </p>
+    ) : null
+  }
+</BaseLayout>

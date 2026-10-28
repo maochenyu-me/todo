@@ -1,0 +1,211 @@
+---
+/**
+ * 七列月历：`/calendar`（默认渲染最新有数据的一个月）与 `/calendar/<YYYY-MM>` 共用这一份版面。
+ *
+ * 抽成组件而不是把这份 DOM 抄两遍：两个页面的差别只有「哪个参数化地址是规范地址」，
+ * 格子本身必须逐字节一致，否则读者在两个月之间切换时会看到两套排版。
+ *
+ * 零 JS：月份切换是链接，格子是链接，没有一个月选择器控件。
+ *
+ * 格内表达的是**密度**而非红绿灯：日期数字下面一条细横条，按当天完成率填充。
+ * 不区分「好/坏」，只区分「画了多少」。没有记录的那天不画横条——空轨道本身就是信息。
+ */
+import { formatYearMonth, parseDateKey, startOfWeekGrid } from '../lib/date';
+import { monthStart } from '../lib/months';
+import { withBase } from '../lib/urls';
+
+/** 某一天在月历里的全部信息；只包含**磁盘上有文件**的日期。 */
+export interface DayCell {
+  date: string;
+  total: number;
+  done: number;
+}
+
+interface Props {
+  /** `YYYY-MM` */
+  monthKey: string;
+  /** 本月有记录的日期（含「有文件但 0 条任务」的日子）。 */
+  days: DayCell[];
+  /** 「今天」的唯一依据，由页面按 `siteConfig.site.timeZone` 算好传进来。 */
+  todayKey: string;
+  weekStartsOn: 0 | 1;
+  /** 相邻的可翻月份；`null` 表示这个方向上没有可链接的月份。 */
+  prevMonthKey: string | null;
+  nextMonthKey: string | null;
+  /** 有数据的最新月份，用于「这个月没有记录」时的去处。 */
+  latestMonthKey: string;
+}
+
+const { monthKey, days, todayKey, weekStartsOn, prevMonthKey, nextMonthKey, latestMonthKey } =
+  Astro.props;
+
+const firstKey = monthStart(monthKey);
+
+/** 42 个日期 key：本月整月 + 前后补齐，首项星期几等于 `weekStartsOn`。 */
+const grid = startOfWeekGrid(firstKey, weekStartsOn);
+
+const byDate = new Map(days.map((day) => [day.date, day]));
+
+/**
+ * 星期表头。`date.ts` 只导出 `weekdayOf`（数字），不导中文单字；
+ * 这里是七个字的排版常量，不是日期换算，所以就地写死比再导出一个 API 更省事。
+ */
+const WEEK_LABELS = ['日', '一', '二', '三', '四', '五', '六'] as const;
+const weekLabels = Array.from({ length: 7 }, (_, i) => WEEK_LABELS[(weekStartsOn + i) % 7]);
+
+const monthTitle = formatYearMonth(firstKey);
+const hasAnyData = days.length > 0;
+const isLatest = monthKey === latestMonthKey;
+
+/** 月份翻页链接：只连到真有页面的月份（有数据的月份 ∪ 当前月）。 */
+function monthHref(key: string): string {
+  return withBase(`/calendar/${key}`);
+}
+
+/**
+ * 有记录的日子指向 `/date/<key>`——**今天也不例外**（brief 明确要求 `to /date/<key>`）。
+ *
+ * 与 Task 8 的 `DayView.hrefOf()` 有意不同：那边把今天指回 `/` 是为了避免同一份内容
+ * 有两个入口。但归档/月历/标签都是**按日期列举**的视角，读者点的是「这一天」这个具体
+ * 日子，不是「今天」这个入口；且 `/date/<今天>` 的 canonical 已经指回 `/`，
+ * 所以不存在重复内容被索引的问题。两套写法各自的理由都写在这里，别「统一」掉。
+ */
+function dayHref(dateKey: string): string {
+  return withBase(`/date/${dateKey}`);
+}
+---
+
+<div>
+  <header class="flex flex-wrap items-end justify-between gap-x-6 gap-y-3 pb-6">
+    <h1 class="text-[1.375rem] font-semibold tracking-[-0.01em] text-foreground">{monthTitle}</h1>
+
+    <nav aria-label="按月份翻阅" class="flex items-center gap-4 text-[0.8125rem]">
+      {
+        prevMonthKey ? (
+          <a
+            href={monthHref(prevMonthKey)}
+            rel="prev"
+            class="text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
+          >
+            上个月
+          </a>
+        ) : (
+          <span aria-disabled="true" class="text-muted-foreground">
+            上个月<span class="sr-only">：没有更早的月份</span>
+          </span>
+        )
+      }
+      {
+        nextMonthKey ? (
+          <a
+            href={monthHref(nextMonthKey)}
+            rel="next"
+            class="text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
+          >
+            下个月
+          </a>
+        ) : (
+          <span aria-disabled="true" class="text-muted-foreground">
+            下个月<span class="sr-only">：没有更晚的月份</span>
+          </span>
+        )
+      }
+    </nav>
+  </header>
+
+  {
+    hasAnyData ? null : (
+      <p class="mb-5 text-[0.9375rem] text-foreground">
+        这个月还没有任何记录。
+        {isLatest ? null : (
+          <a
+            href={monthHref(latestMonthKey)}
+            class="ml-1 text-primary underline-offset-4 hover:underline"
+          >
+            去看最近有记录的一个月
+          </a>
+        )}
+      </p>
+    )
+  }
+
+  <div class="border-t border-border pt-3">
+    <ul class="grid grid-cols-7 gap-x-1 pb-1" aria-hidden="true">
+      {
+        weekLabels.map((label) => (
+          <li class="text-center text-[0.75rem] text-muted-foreground">{label}</li>
+        ))
+      }
+    </ul>
+
+    <ul class="grid grid-cols-7 gap-x-1 gap-y-1">
+      {
+        grid.map((dateKey) => {
+          const cell = byDate.get(dateKey);
+          const inMonth = dateKey.slice(0, 7) === monthKey;
+          const dayNumber = parseDateKey(dateKey).d;
+          const isToday = dateKey === todayKey;
+
+          // 无记录：只留日期数字，不画轨道。有记录但 0 条任务：画空轨道（「这天写了，只是没写事」）。
+          if (!cell) {
+            return (
+              <li class="flex min-h-[3.25rem] flex-col rounded-[2px] px-1.5 pt-1 pb-1.5">
+                <span
+                  class:list={[
+                    'text-[0.8125rem] tabular-nums',
+                    inMonth ? 'text-muted-foreground' : 'text-border',
+                  ]}
+                >
+                  {dayNumber}
+                </span>
+              </li>
+            );
+          }
+
+          // 密度：完成率直接映射成横条宽度。分母为 0 时不产生 NaN，横条就是空的。
+          const pct = cell.total === 0 ? 0 : Math.round((cell.done / cell.total) * 100);
+          const densityLabel =
+            cell.total === 0 ? '没有条目' : `完成 ${cell.done} / ${cell.total}`;
+
+          return (
+            <li class="flex">
+              <a
+                href={dayHref(dateKey)}
+                aria-current={isToday ? 'date' : undefined}
+                class:list={[
+                  'flex min-h-[3.25rem] w-full flex-col rounded-[2px] px-1.5 pt-1 pb-1.5 transition-colors',
+                  'hover:bg-muted',
+                  inMonth ? null : 'opacity-70',
+                ]}
+              >
+                <span
+                  class:list={[
+                    'text-[0.8125rem] tabular-nums',
+                    isToday ? 'font-semibold text-seal' : 'text-foreground',
+                  ]}
+                >
+                  {dayNumber}
+                </span>
+                {/* 细横条：轨道＝这天有记录，填充＝完成密度。纯装饰，数字在 sr-only 里。 */}
+                <span
+                  class="mt-auto block h-[3px] w-full bg-muted"
+                  aria-hidden="true"
+                >
+                  <span
+                    class="block h-full bg-foreground"
+                    style={`width:${pct}%`}
+                  />
+                </span>
+                <span class="sr-only">，{densityLabel}</span>
+              </a>
+            </li>
+          );
+        })
+      }
+    </ul>
+  </div>
+
+  <p class="mt-6 text-[0.8125rem] text-muted-foreground">
+    格子下沿的横条按当天完成率填充；有横条轨道的那天有记录，点进去看当天的事。
+  </p>
+</div>
