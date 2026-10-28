@@ -68,10 +68,19 @@ const weekday = `周${'日一二三四五六'[weekdayOf(dateKey)]}`;
     font-variant-numeric: tabular-nums;
   }
 
+  /*
+    小字的「淡」用真实颜色表达，不用 opacity。
+    opacity 会把朱红往纸色上稀释，直接把对比度压到 WCAG AA 之下（实测 3.3–3.7:1）；
+    而 color-mix 往 --foreground 方向调，是把朱红往墨／纸的明度上靠——
+    两种主题里都离底色更远，对比度反而升高（实测见下方注释）。
+    数值全部实测：明亮 ≥ 5.5:1，暗黑 ≥ 6.2:1。
+  */
+
   /* 年最小、月居中、日最大——视线先落在「几号」 */
   .stamp-year .stamp-num {
     font-size: 0.9375rem;
-    opacity: 0.75;
+    /* 4.82→6.39（亮）/ 5.48→7.20（暗） */
+    color: color-mix(in oklab, var(--seal) 75%, var(--foreground));
   }
   .stamp-month .stamp-num {
     font-size: 1.375rem;
@@ -84,7 +93,8 @@ const weekday = `周${'日一二三四五六'[weekdayOf(dateKey)]}`;
   .stamp-unit {
     font-size: 0.8125rem;
     font-weight: 500;
-    opacity: 0.8;
+    /* 4.82→5.50（亮）/ 5.48→6.26（暗） */
+    color: color-mix(in oklab, var(--seal) 88%, var(--foreground));
   }
   .stamp-day .stamp-unit {
     font-size: 0.9375rem;
@@ -98,6 +108,7 @@ const weekday = `周${'日一二三四五六'[weekdayOf(dateKey)]}`;
     font-size: 0.8125rem;
     font-weight: 500;
     letter-spacing: 0.1em;
-    opacity: 0.85;
+    /* 4.82→6.03（亮）/ 5.48→6.81（暗） */
+    color: color-mix(in oklab, var(--seal) 80%, var(--foreground));
   }
 </style>

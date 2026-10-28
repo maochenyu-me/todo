@@ -23,19 +23,25 @@ const hasMeta = tags.length > 0 || showPriority;
   一件待办＝簿纸上的一行。
   行内顺序固定：时间段 → 勾选字形 → 标题 → 标签 → 优先级。
   标签与优先级整体靠右，各行的优先级右沿对齐——像簿子右侧那一列栏目。
+
+  时间列整列由 showTimeBlock 控制：
+  - 开：有 timeBlock 的行显示时间，没有的用等宽占位，保证与上行对齐；
+  - 关：这一列连同占位一起不渲染，标题从最左取满整行，不留空槽。
 -->
 <li class="task-row flex flex-wrap items-baseline gap-x-2.5 gap-y-1 py-2.5">
   {
-    time ? (
-      <span class="w-[5.25rem] shrink-0 text-[0.8125rem] text-muted-foreground tabular-nums max-sm:order-first max-sm:w-full">
-        {time.start}
-        <span aria-hidden="true">–</span>
-        <span class="sr-only">至</span>
-        {time.end}
-      </span>
-    ) : (
-      <span class="w-[5.25rem] shrink-0 max-sm:hidden" aria-hidden="true" />
-    )
+    showTimeBlock ? (
+      time ? (
+        <span class="w-[5.25rem] shrink-0 text-[0.8125rem] text-muted-foreground tabular-nums max-sm:order-first max-sm:w-full">
+          {time.start}
+          <span aria-hidden="true">–</span>
+          <span class="sr-only">至</span>
+          {time.end}
+        </span>
+      ) : (
+        <span class="w-[5.25rem] shrink-0 max-sm:hidden" aria-hidden="true" />
+      )
+    ) : null
   }
 
   <span class="glyph" aria-hidden="true">

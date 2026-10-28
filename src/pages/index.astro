@@ -14,6 +14,11 @@ const today = todayInZone(siteConfig.site.timeZone);
 /**
  * 占位数据：Task 8 接真实数据后整段删除。
  * 刻意覆盖三种形态——带时间块未完成 / 无时间块高优先级带标签 / 已完成。
+ *
+ * 关于这里的 `+08:00`：**只因为这是手写的假数据**，时间戳必须自带偏移才能构成合法
+ * ISO 串。真实数据由后台按用户所在时区写入、自带各自的偏移，读进来原样保留即可。
+ * Task 8 及之后**不得**再硬编码 `+08:00` ——「今天」的唯一依据始终是
+ * `siteConfig.site.timeZone`，日期换算一律走 `src/lib/date.ts`。
  */
 const tasks: Task[] = [
   {
@@ -26,6 +31,7 @@ const tasks: Task[] = [
     tags: ['开发'],
     note: '',
     timeBlock: { start: '09:00', end: '10:30' },
+    // 仅假数据自带 +08:00；真实数据各自带偏移，新代码不得硬编码时区偏移
     createdAt: `${today}T08:12:00+08:00`,
     updatedAt: `${today}T08:12:00+08:00`,
   },
@@ -39,6 +45,7 @@ const tasks: Task[] = [
     tags: ['设计', '前台'],
     note: '',
     timeBlock: null,
+    // 同上：占位数据专用偏移
     createdAt: `${today}T09:40:00+08:00`,
     updatedAt: `${today}T09:40:00+08:00`,
   },
@@ -46,6 +53,7 @@ const tasks: Task[] = [
     id: 'z2w8cd',
     title: '跑通一遍构建与类型检查',
     done: true,
+    // 同上：占位数据专用偏移
     completedAt: `${today}T11:05:00+08:00`,
     order: 2,
     priority: 2,
@@ -81,11 +89,12 @@ const nextKey = addDays(today, 1);
     {
       open.length > 0 ? (
         <div>
+          {/* 列头：只列真实存在的列。showTimeBlock 关掉时不留「时间」标题与空槽。 */}
           <div
             class="flex gap-x-2.5 border-b border-border pb-1.5 text-[0.8125rem] text-muted-foreground max-sm:hidden"
             aria-hidden="true"
           >
-            <span class="w-[5.25rem] shrink-0">时间</span>
+            {showTimeBlock ? <span class="w-[5.25rem] shrink-0">时间</span> : null}
             <span class="w-[13px] shrink-0" />
             <span>事项</span>
           </div>
