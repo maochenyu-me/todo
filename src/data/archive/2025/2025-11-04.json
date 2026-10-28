@@ -1,0 +1,54 @@
+{
+  "date": "2025-11-04",
+  "tasks": [
+    {
+      "id": "d7r5nq",
+      "title": "重画一版图标，统一线宽到 1.5",
+      "done": true,
+      "completedAt": "2025-11-04T11:20:00+08:00",
+      "order": 0,
+      "priority": 1,
+      "tags": [
+        "设计"
+      ],
+      "note": "上个月那版混了 1 和 2，缩到 16px 就糊了",
+      "timeBlock": {
+        "start": "09:00",
+        "end": "11:30"
+      },
+      "createdAt": "2025-11-04T08:05:00+08:00",
+      "updatedAt": "2025-11-04T11:23:00+08:00"
+    },
+    {
+      "id": "e2k9zt",
+      "title": "把 CI 上偶发失败的那个用例隔离出来",
+      "done": false,
+      "completedAt": null,
+      "order": 1,
+      "priority": 0,
+      "tags": [
+        "开发"
+      ],
+      "note": "十次里挂一次，先复现再动手",
+      "timeBlock": {
+        "start": "14:00",
+        "end": "16:00"
+      },
+      "createdAt": "2025-11-04T08:05:00+08:00",
+      "updatedAt": "2025-11-04T16:30:00+08:00"
+    },
+    {
+      "id": "f8t4xc",
+      "title": "给下季度的目标写三条能验证的标准",
+      "done": false,
+      "completedAt": null,
+      "order": 2,
+      "priority": 2,
+      "tags": [],
+      "note": "",
+      "timeBlock": null,
+      "createdAt": "2025-11-04T09:15:00+08:00",
+      "updatedAt": "2025-11-04T09:15:00+08:00"
+    }
+  ]
+}

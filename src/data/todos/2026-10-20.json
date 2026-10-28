@@ -1,0 +1,56 @@
+{
+  "date": "2026-10-20",
+  "tasks": [
+    {
+      "id": "a7m2q1",
+      "title": "把上周的需求池过一遍，合并重复项",
+      "done": true,
+      "completedAt": "2026-10-20T10:22:00+08:00",
+      "order": 0,
+      "priority": 1,
+      "tags": [
+        "会议"
+      ],
+      "note": "三十条里砍掉一半，剩下的按版本重新排",
+      "timeBlock": {
+        "start": "09:30",
+        "end": "10:30"
+      },
+      "createdAt": "2026-10-20T07:52:00+08:00",
+      "updatedAt": "2026-10-20T10:24:00+08:00"
+    },
+    {
+      "id": "b3kd8f",
+      "title": "修掉列表页在 Safari 上的横向抖动",
+      "done": true,
+      "completedAt": "2026-10-20T15:38:00+08:00",
+      "order": 1,
+      "priority": 0,
+      "tags": [
+        "开发"
+      ],
+      "note": "滚动条宽度没算进去，sticky 表头一直在跳",
+      "timeBlock": {
+        "start": "14:00",
+        "end": "16:00"
+      },
+      "createdAt": "2026-10-20T07:52:00+08:00",
+      "updatedAt": "2026-10-20T15:40:00+08:00"
+    },
+    {
+      "id": "c9x2rt",
+      "title": "给深色模式补一版色板，别再用纯黑",
+      "done": false,
+      "completedAt": null,
+      "order": 2,
+      "priority": 2,
+      "tags": [
+        "设计"
+      ],
+      "note": "",
+      "timeBlock": null,
+      "createdAt": "2026-10-20T07:52:00+08:00",
+      "updatedAt": "2026-10-20T09:05:00+08:00"
+    }
+  ]
+}
