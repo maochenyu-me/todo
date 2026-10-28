@@ -54,10 +54,12 @@ npm init -y
 npm i astro@7.4.2 @astrojs/react@7.1.1 @astrojs/sitemap@3.7.4 react@19.3.1 react-dom@19.3.1 \
   tailwindcss@4.3.3 @tailwindcss/vite@4.3.3 @lucide/astro@1.62.0 lucide-react@1.62.0 \
   clsx@2.1.1 tailwind-merge@3.7.0 class-variance-authority@0.7.1
-npm i -D typescript@5.9.3 @types/react@19.3.0 @types/react-dom@19.3.0 vitest@5.0.5 @playwright/test@1.64.1
+npm i -D typescript@5.9.3 @types/react@19.3.0 @types/react-dom@19.3.0 vitest@5.0.5 @playwright/test@1.64.1 @astrojs/check@0.9.12
 ```
 
 Expected: `node_modules` 生成，无 peer dependency 报错。
+
+> `@astrojs/check` 必须装：`npm run check` 脚本引用它，不装则交互式提示并挂死非 TTY 环境。
 
 - [ ] **Step 2: 写 `package.json` 的 scripts 与 `type: module`**
 
@@ -129,6 +131,7 @@ git commit -m "chore: scaffold Astro 7 project with config entry and design toke
   - `todayInZone(timeZone: string, now?: Date): string` → `"YYYY-MM-DD"`
   - `toDateKey(d: Date, timeZone: string): string`
   - `addDays(dateKey: string, delta: number): string`
+  - `addMonths(dateKey: string, delta: number): string`（月末夹取：`2026-01-31` 加 1 月得 `2026-02-28`）
   - `parseDateKey(dateKey: string): { y: number; m: number; d: number }`
   - `isValidDateKey(s: string): boolean`
   - `formatLong(dateKey: string): string` → `"2026年10月28日 周三"`
@@ -137,7 +140,7 @@ git commit -m "chore: scaffold Astro 7 project with config entry and design toke
   - `monthRange(dateKey: string): string[]` → 该月所有日期 key（含空月）
   - `weekdayOf(dateKey: string): 0..6`（0=周日）
   - `startOfWeekGrid(dateKey: string, weekStartsOn: 0 | 1): string[]` → 月历网格的 42 个日期 key
-  - `monthsBetween(fromKey: string, toKey: string): number`
+  - `monthsBetween(fromKey: string, toKey: string): number`（**完整月数**的 floor）
 
 - [ ] **Step 1: 写失败的测试 `src/lib/date.test.ts`**
 
@@ -175,6 +178,10 @@ test('monthsBetween 边界', () => {
   expect(monthsBetween('2026-04-28', '2026-10-28')).toBe(6);
   expect(monthsBetween('2026-04-29', '2026-10-28')).toBe(5);
 });
+test('addMonths 月末夹取', () => {
+  expect(addMonths('2026-01-31', 1)).toBe('2026-02-28');
+  expect(addMonths('2026-10-28', -6)).toBe('2026-04-28');
+});
 test('isValidDateKey 拒绝非法输入', () => {
   expect(isValidDateKey('2026-02-30')).toBe(false);
   expect(isValidDateKey('2026-1-5')).toBe(false);
@@ -205,52 +212,91 @@ git commit -m "feat(date): add timezone-fixed date helpers"
 
 ---
 
-## Task 3: 数据读取、合并与校验
+## Task 3: 数据编解码（无 Node 依赖）与文件读取
+
+**为什么拆两个文件：** 后台的 `publish.ts` 运行在**浏览器**里，却需要序列化与路径规则。因此把纯逻辑放进 `entry-codec.ts`（零 Node API），`data.ts` 才允许 import `node:fs`。浏览器端只许 import `entry-codec.ts`，**import 了 `data.ts` 会导致构建失败**。
 
 **Files:**
-- Create: `src/lib/data.ts`, `src/lib/data.test.ts`
+- Create: `src/lib/entry-codec.ts`, `src/lib/entry-codec.test.ts`, `src/lib/data.ts`, `src/lib/data.test.ts`
 
 **Interfaces:**
-- Consumes: `types.ts`、`date.ts`（`isValidDateKey`、`monthRange`）。
-- Produces:
-  - `readDayFromDisk(activeDir: string, archiveDir: string, dateKey: string): DayEntry | null`
-  - `loadAllEntries(activeDir: string, archiveDir: string): { entries: DayEntry[]; errors: { path: string; message: string }[] }`（`entries` 按 `date` 升序、去重）
+- Consumes: `types.ts`、`date.ts`（`isValidDateKey`）。
+- Produces (`entry-codec.ts`，**禁止 import 任何 `node:*`**):
   - `validateEntry(raw: unknown, dateKey: string): { ok: true; entry: DayEntry } | { ok: false; errors: string[] }`
   - `serializeEntry(entry: DayEntry): string`（2 空格缩进 + 结尾换行）
-  - `entryPath(kind: "active" | "archive", dateKey: string, cfg): string`
+  - `parseEntry(text: string, dateKey: string): { ok: true; entry: DayEntry } | { ok: false; errors: string[] }`
+  - `entryPath(kind: "active" | "archive", dateKey: string, dataCfg: { activeDir: string; archiveDir: string }): string`
+    - active: `<activeDir>/<dateKey>.json`
+    - archive: `<archiveDir>/<YYYY>/<dateKey>.json`
+- Produces (`data.ts`，唯一允许碰文件系统的模块):
+  - `readDayFromDisk(activeDir: string, archiveDir: string, dateKey: string): DayEntry | null`
+  - `loadAllEntries(activeDir: string, archiveDir: string): { entries: DayEntry[]; errors: { path: string; message: string }[] }`（`entries` 按 `date` 升序、去重）
 
-- [ ] **Step 1: 写失败的测试**
+- [ ] **Step 1: 写 `entry-codec.test.ts` 的失败测试**
 
-按 Review Focus 2 与 3，必须包含：
+按 Review Focus 2，必须包含：
 
 ```ts
 test('文件名与内容 date 不符时报错并指名文件', () => {
   const r = validateEntry({ date: '2026-10-27', tasks: [] }, '2026-10-28');
   expect(r.ok).toBe(false);
+  if (r.ok) throw new Error('unreachable');
   expect(r.errors.join()).toContain('2026-10-28');
 });
 test('缺 tasks 不抛异常，返回错误', () => {
   expect(validateEntry({ date: '2026-10-28' }, '2026-10-28').ok).toBe(false);
 });
-test('同一日期同时存在于活跃区与归档区时只出现一次', () => { /* 用临时目录写两份同日期文件 */ });
-test('JSON 语法错误时 loadAllEntries 跳过该文件但收集错误', () => { /* 断言 errors 含该路径 */ });
-test('serializeEntry 往返稳定', () => { /* parse(serialize(e)) 深等于 e */ });
+test('tasks 不是数组时报错', () => {
+  expect(validateEntry({ date: '2026-10-28', tasks: {} }, '2026-10-28').ok).toBe(false);
+});
+test('priority 越界被拒绝而非静默修正', () => {
+  const r = validateEntry({ date: '2026-10-28', tasks: [{ ...validTask, priority: 5 }] }, '2026-10-28');
+  expect(r.ok).toBe(false);
+});
+test('serializeEntry 往返稳定', () => {
+  const e: DayEntry = { date: '2026-10-28', tasks: [validTask] };
+  const back = parseEntry(serializeEntry(e), '2026-10-28');
+  expect(back.ok).toBe(true);
+  if (back.ok) expect(back.entry).toEqual(e);
+});
+test('entryPath 归档路径按年份分桶', () => {
+  expect(entryPath('archive', '2025-11-03', { activeDir: 'a', archiveDir: 'b' })).toBe('b/2025/2025-11-03.json');
+});
 ```
 
-> `loadAllEntries` 返回 `{ entries, errors }`。坏文件进入 `errors`，构建时打印警告，**不中断构建**。
+- [ ] **Step 2: 运行确认失败** — `npm test -- src/lib/entry-codec.test.ts`
 
-- [ ] **Step 2: 运行确认失败** — `npm test -- src/lib/data.test.ts`
+- [ ] **Step 3: 实现 `entry-codec.ts`**
 
-- [ ] **Step 3: 实现 `src/lib/data.ts`**
-
-校验规则：`date` 为合法 key 且与文件名一致；`tasks` 是数组；每个 task 的 `title` 非空、`priority` ∈ {0,1,2}、`done` 为布尔、`tags` 为字符串数组、`timeBlock` 为 null 或 `end > start`。**任何越界值不静默修正，写进 `errors`。**
+校验规则：`date` 为合法 key 且与文件名一致；`tasks` 是数组；每个 task 的 `title` 非空、`priority` ∈ {0,1,2}、`done` 为布尔、`tags` 为字符串数组、`timeBlock` 为 null 或 `end > start`、`id` 非空。**任何越界值不静默修正，写进 `errors`。**
 
 - [ ] **Step 4: 运行确认通过**
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: 写 `data.test.ts` 的失败测试**
+
+```ts
+test('同一日期同时存在于活跃区与归档区时只出现一次', () => { /* 临时目录写两份同日期文件 */ });
+test('JSON 语法错误时跳过该文件但收集错误', () => { /* 断言 errors 含该路径 */ });
+test('缺少目录时不抛异常，返回空 entries', () => { /* activeDir 不存在 */ });
+```
+
+- [ ] **Step 6: 运行确认失败 → Step 7: 实现 `data.ts` → Step 8: 通过**
+
+`data.ts` 必须 `import { parseEntry } from './entry-codec'`，不得重复实现校验。坏文件进入 `errors`，**不中断**。
+
+- [ ] **Step 9: 加一条守卫测试**
+
+```ts
+test('entry-codec 不含 node 依赖', () => {
+  const src = readFileSync('src/lib/entry-codec.ts', 'utf8');
+  expect(src).not.toMatch(/from ['"]node:/);
+});
+```
+
+- [ ] **Step 10: Commit**
 
 ```bash
-git commit -m "feat(data): add tolerant day-entry loader with validation"
+git commit -m "feat(data): add browser-safe entry codec and fs loader"
 ```
 
 ---
@@ -263,6 +309,8 @@ git commit -m "feat(data): add tolerant day-entry loader with validation"
 **Interfaces:**
 - Produces (`validate.ts`): `validateTask(task: Task): string[]`（返回人类可读中文错误，空数组表示通过）；`validateDay(entry: DayEntry): string[]`；`normalizeTask(task: Task): Task`（补全 `completedAt`、去重 tags、`order` 重新编号）。
 - Produces (`archive.ts`): `shouldArchive(dateKey: string, todayKey: string, afterMonths: number): boolean`；`planArchiveMove(dateKeys: string[], todayKey: string, afterMonths: number): { move: string[] }`。
+
+**边界语义（已裁决，勿改）：** `shouldArchive` 用**截止日比较**实现——`dateKey < addMonths(todayKey, -afterMonths)`。所以 `afterMonths=6`、`today=2026-10-28` 时，截止日为 `2026-04-28`，`2026-04-27` 搬、`2026-04-28` 不搬。不要用 `monthsBetween(...) > afterMonths`，那会让 4/27 与 4/28 同归一类而两条测试无法同时成立。
 
 - [ ] **Step 1: 写失败的测试**
 
@@ -291,7 +339,7 @@ test('planArchiveMove 对同一 key 幂等', () => {
 
 - [ ] **Step 3: 实现两个模块**
 
-`shouldArchive` 的语义：`monthsBetween(dateKey, todayKey) > afterMonths` 才搬（恰好等于不搬）。文案必须与 spec 8.7 表格**逐字一致**。
+`shouldArchive` 严格按上面的截止日比较实现。文案必须与 spec 8.7 表格**逐字一致**。
 
 - [ ] **Step 4: 运行确认通过**
 
@@ -824,8 +872,8 @@ git commit -m "feat(admin): add day list, task editor and status bar"
 - Modify: `src/admin/AdminApp.tsx`
 
 **Interfaces:**
-- Consumes: `github.ts` 的 `commitChanges`、`validate.ts`、`archive.ts` 的 `shouldArchive`/`planArchiveMove`、`data.ts` 的 `serializeEntry`/`entryPath`、`siteConfig.admin.github`。
-- Produces: `buildPublishPayload(input: { days: Record<string, DayEntry>; dirty: Set<string>; todayKey: string; cfg }): { writes: { path: string; content: string }[]; deletes: string[]; summary: string }` —— **纯函数，可单测**。
+- Consumes: `github.ts` 的 `commitChanges`、`validate.ts`、`archive.ts` 的 `shouldArchive`/`planArchiveMove`、**`entry-codec.ts`** 的 `serializeEntry`/`entryPath`（**不得 import `data.ts`，那会把 `node:fs` 打进浏览器包**）、`siteConfig.admin.github`。
+- Produces: `buildPublishPayload(input: { days: Record<string, DayEntry>; dirty: Set<string>; todayKey: string; dataCfg; afterMonths: number }): { writes: { path: string; content: string }[]; deletes: string[]; summary: string }` —— **纯函数，可单测**。
 
 - [ ] **Step 1: 写 `publish.test.ts` 的失败测试**
 
@@ -845,6 +893,10 @@ test('summary 形如 "3 天 / 12 项改动"', () => {
   expect(p.summary).toMatch(/^\d+ 天 \/ \d+ 项改动$/);
 });
 test('空 dirty 时 writes 与 deletes 均为空', () => {});
+test('publish 链路不引入 node 内置模块', () => {
+  const src = readFileSync('src/admin/publish.ts', 'utf8');
+  expect(src).not.toMatch(/from ['"]node:/);
+});
 ```
 
 - [ ] **Step 2: 运行确认失败 → Step 3: 实现 → Step 4: 通过**
@@ -874,7 +926,7 @@ git commit -m "feat(admin): wire publish flow with archive migration"
 - Create: `scripts/archive.mjs`
 
 **Interfaces:**
-- Consumes: `archive.ts` 的 `planArchiveMove`、`data.ts` 的 `entryPath`、`site.config.ts` 的 `data` 配置。
+- Consumes: `archive.ts` 的 `planArchiveMove`、**`entry-codec.ts`** 的 `entryPath`、`site.config.ts` 的 `data` 配置。
 
 - [ ] **Step 1: 写脚本**
 
