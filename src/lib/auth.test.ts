@@ -1,9 +1,15 @@
 import { pbkdf2Sync } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import { base64ToBytes, bytesToBase64, constantTimeEqual, parseKdf, verifyPassword } from './auth';
+
+/**
+ * 在模块加载时抓一份真 WebCrypto：后面的用例会临时 stub 掉 `globalThis.crypto`，
+ * 想验证"显式注入优先于全局"就必须留一个不受 stub 影响的引用。
+ */
+const realSubtle = globalThis.crypto.subtle;
 
 /**
  * 注意：本文件的 PBKDF2 一律用 1000 次迭代，**绝不用生产里的 600000 次**。
@@ -163,6 +169,54 @@ describe('verifyPassword：畸形 stored 返回 false 且不抛异常', () => {
       },
     } as unknown as SubtleCrypto;
     await expect(verifyPassword(PASSWORD, VALID_STORED, exploding)).resolves.toBe(false);
+  });
+});
+
+describe('verifyPassword：全局 WebCrypto 缺失时也绝不抛异常', () => {
+  test('stored 畸形 + 宿主没有 globalThis.crypto → 解析为 false（不是 reject）', async () => {
+    // 回归点：若默认值写成参数默认参数 `subtle = globalThis.crypto.subtle`，
+    // 它在函数体之前求值，这里会直接抛 TypeError 而不是 resolve(false)。
+    vi.stubGlobal('crypto', undefined);
+    try {
+      expect(globalThis.crypto).toBeUndefined();
+      await expect(verifyPassword('x', 'not-a-kdf')).resolves.toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test('stored 合法但宿主没有 globalThis.crypto → 同样解析为 false', async () => {
+    vi.stubGlobal('crypto', undefined);
+    try {
+      await expect(verifyPassword(PASSWORD, VALID_STORED)).resolves.toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test('全局 crypto 存在但 subtle 读取就抛错 → 仍解析为 false', async () => {
+    // 比"缺失"更刁钻：属性 accessor 本身抛异常，只有把它挪进 try 里才兜得住。
+    const explodingSubtle = {
+      get subtle(): SubtleCrypto {
+        throw new Error('subtle backend unavailable');
+      },
+    };
+    vi.stubGlobal('crypto', explodingSubtle);
+    try {
+      await expect(verifyPassword('x', 'not-a-kdf')).resolves.toBe(false);
+      await expect(verifyPassword(PASSWORD, VALID_STORED)).resolves.toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test('显式注入的 subtle 优先于全局（全局缺失时仍可用）', async () => {
+    vi.stubGlobal('crypto', undefined);
+    try {
+      await expect(verifyPassword(PASSWORD, VALID_STORED, realSubtle)).resolves.toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

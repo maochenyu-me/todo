@@ -112,31 +112,41 @@ export function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
 }
 
 /**
- * 校验密码。`subtle` 只为测试可注入而存在，默认用全局 WebCrypto。
+ * 校验密码。`subtle` 只为测试可注入而存在，默认取全局 WebCrypto。
  *
  * `iterations` **一律从 `stored` 读**，不写死 600000：测试用 1000 轮保持快速，
  * 生产用 600000 轮，同一份代码两者都成立。
  *
  * 任何异常（stored 畸形、`deriveBits` 不被支持、迭代数过大被实现拒绝……）
  * 都收敛成 `false`，绝不向 UI 抛错。
+ *
+ * 注意默认值**不能**写成参数默认值 `subtle: SubtleCrypto = globalThis.crypto.subtle`：
+ * 参数默认值在函数体之前求值，若宿主里 `globalThis.crypto` 不存在（老浏览器、某些
+ * SSR 沙箱、被 polyfill 前的早期启动阶段），读 `.subtle` 就会在 `try` 之外抛错，
+ * "永不抛异常"的契约当场破功 —— 连"stored 畸形"这种本该直接 false 的调用都会变成 reject。
+ * 所以全局查找挪进 `try`，缺失即返回 `false`（谁都不许进）。
  */
 export async function verifyPassword(
   password: string,
   stored: string,
-  subtle: SubtleCrypto = globalThis.crypto.subtle,
+  subtle?: SubtleCrypto,
 ): Promise<boolean> {
   const parsed = parseKdf(stored);
   if (!parsed) return false;
 
   try {
-    const key = await subtle.importKey(
+    // 在 `try` 内解析默认值，见上方说明。
+    const webcrypto = subtle ?? globalThis.crypto?.subtle;
+    if (!webcrypto) return false;
+
+    const key = await webcrypto.importKey(
       'raw',
       new TextEncoder().encode(password),
       'PBKDF2',
       false,
       ['deriveBits'],
     );
-    const bits = await subtle.deriveBits(
+    const bits = await webcrypto.deriveBits(
       {
         name: 'PBKDF2',
         // 复制一份：`Uint8Array` 的泛型参数可能是 `ArrayBufferLike`（含 `SharedArrayBuffer`），

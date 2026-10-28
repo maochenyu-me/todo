@@ -23,6 +23,8 @@ import { createInterface } from 'node:readline';
 import { Writable } from 'node:stream';
 import { promisify } from 'node:util';
 
+import { readPasswordFromStream } from './read-password.mjs';
+
 const pbkdf2 = promisify(pbkdf2Callback);
 
 /** `.env` 里的变量名。派生值以 `PUBLIC_` 前缀公开进 bundle —— 这是本设计有意的取舍。 */
@@ -48,15 +50,16 @@ function fail(message) {
 /**
  * 读密码。两条路径：
  * - 终端（`stdin.isTTY`）：`readline` + 静音 output，输入不回显。
- * - 管道（`'pw' | npm run gen-password`）：直接把 stdin 全读完取第一行。
+ * - 管道（`'pw' | npm run gen-password`）：把 stdin 全读完取第一行。
  *   管道模式下本就没有回显问题，读完即走，不会因为等不到 EOF 而挂住。
+ *
+ * 管道分支交给 `read-password.mjs`：它用 `StringDecoder` 逐块解码，
+ * 不会把一个跨 chunk 边界的多字节字符切成两个 `U+FFFD`。
  */
 async function readPassword() {
   if (!process.stdin.isTTY) {
     process.stderr.write('从标准输入读取密码…\n');
-    let raw = '';
-    for await (const chunk of process.stdin) raw += chunk;
-    return raw.split(/\r?\n/)[0] ?? '';
+    return readPasswordFromStream(process.stdin);
   }
 
   process.stderr.write(`请输入管理员密码（至少 ${MIN_PASSWORD_LENGTH} 位，输入不会显示）：`);
