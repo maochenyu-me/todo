@@ -95,10 +95,18 @@ export function validateDay(entry: DayEntry): string[] {
   }
 
   // 再查同日 id 重复：同一个 id 出现 N 次只报一条（用户只需要知道"这一条重复了"），
-  // 两个不同 id 各自重复则各报一条。空 id 是结构问题（entry-codec 管），这里不判。
+  // 两个不同 id 各自重复则各报一条。
+  //
+  // **空 id（去空白后为空）一律跳过，不参与重复检测**：空 id 是结构问题，`entry-codec.ts`
+  // 已在落盘/读盘那一层报「id 不能为空」并拒绝写入，编辑层再把它报成"重复标识、请删除后
+  // 重新添加这一条"是错的——面板里"新建一行但还没分配 id"是可达状态，那条行本身没问题，
+  // 让用户去删它只会造成困惑。所以这里只对**非空** id 计重复。
   const seen = new Set<string>();
   const reported = new Set<string>();
   for (const task of entry.tasks) {
+    // 只用 trim 判断"是否为空"；非空 id 之间仍按原值比较——`'a'` 与 `'a '` 是两个不同的
+    // 已落盘 id，把它们判成重复属于本函数不该做的语义扩展。
+    if (task.id.trim() === '') continue;
     if (seen.has(task.id)) {
       if (!reported.has(task.id)) {
         errors.push(MSG.duplicateId);
@@ -115,12 +123,13 @@ export function validateDay(entry: DayEntry): string[] {
 /**
  * 自愈：把一条 task 收敛成可以直接落盘的形状，返回**新对象**，绝不改入参。
  *
- * 做三件事（也只有三件）：
+ * 做四件事（也只有四件）：
  * 1. `done === true` 却没有 `completedAt`（`null`、`undefined` 或全空白）→ 补上当前时间的
  *    ISO 字符串。这是 spec 8.7 最后一行的"自愈优先于让用户理解内部约束"。
  *    `done === false` 时**不动**已有的 `completedAt`（那是用户的记录，不该被静默抹掉）。
  * 2. `tags` 逐项去空白、丢空串、去重（保留首次出现的顺序）。
- * 3. **不重排 `order`**——单条 task 无从知道自己在整天的位置；重排整天 `order` 是调用方的事。
+ * 3. `timeBlock` 深拷贝（`null` 保持 `null`），避免返回值与入参共享同一个对象。
+ * 4. **不重排 `order`**——单条 task 无从知道自己在整天的位置；重排整天 `order` 是调用方的事。
  */
 export function normalizeTask(task: Task, now: Date = new Date()): Task {
   // `typeof !== 'string'` 一并兜住 `null` 与运行时可能出现的 `undefined`——类型上
@@ -135,5 +144,10 @@ export function normalizeTask(task: Task, now: Date = new Date()): Task {
     if (tag !== '' && !tags.includes(tag)) tags.push(tag);
   }
 
-  return { ...task, completedAt, tags };
+  // `{ ...task }` 只复制第一层：不显式重建 `timeBlock`，返回值会与入参共享同一个对象，
+  // 调用方就地改 `out.timeBlock.start` 就会静默改写入参，上面"绝不改入参"的承诺落空。
+  const timeBlock =
+    task.timeBlock === null ? null : { start: task.timeBlock.start, end: task.timeBlock.end };
+
+  return { ...task, completedAt, tags, timeBlock };
 }

@@ -215,6 +215,27 @@ describe('validateDay', () => {
     const errors = validateDay(entryOf([taskOf({ id: 'dup', title: ' ' }), taskOf({ id: 'dup' })]));
     expect(errors).toEqual([MSG_TITLE_REQUIRED, MSG_DUPLICATE_ID]);
   });
+
+  test('两条都是空 id 时不报重复标识（空 id 是 entry-codec 层的结构问题）', () => {
+    // 面板里"新建一行但还没分配 id"是可达状态。把它报成"重复标识、请删除后重新添加"
+    // 会误导用户去删一条其实没问题的行；该用户在意的结构问题由 entry-codec 在落盘前拦。
+    const errors = validateDay(entryOf([taskOf({ id: '' }), taskOf({ id: '' })]));
+    expect(errors).not.toContain(MSG_DUPLICATE_ID);
+    expect(errors).toEqual([]);
+  });
+
+  test('全空白 id 同样不算重复', () => {
+    // 用两个完全相同的空白串，否则 `'   '` 与 `'  '` 本来就不同、测不出"空白被跳过"。
+    const errors = validateDay(entryOf([taskOf({ id: '   ' }), taskOf({ id: '   ' })]));
+    expect(errors).not.toContain(MSG_DUPLICATE_ID);
+  });
+
+  test('空 id 不影响真正重复的 id 被报出来', () => {
+    const errors = validateDay(
+      entryOf([taskOf({ id: '' }), taskOf({ id: 'dup' }), taskOf({ id: '' }), taskOf({ id: 'dup' })]),
+    );
+    expect(errors).toEqual([MSG_DUPLICATE_ID]);
+  });
 });
 
 describe('normalizeTask', () => {
@@ -265,6 +286,21 @@ describe('normalizeTask', () => {
     expect(out).not.toBe(input);
     expect(input).toEqual(snapshot);
     expect(out.tags).not.toBe(input.tags);
+  });
+
+  test('timeBlock 也是深拷贝：改返回值的 start 不影响入参', () => {
+    // `{ ...task }` 只复制第一层，`timeBlock` 仍与入参同一对象。调用方若就地改
+    // `out.timeBlock.start`，入参会被静默改写——上面那条不可变性测试的承诺就落空了。
+    const input: Task = { ...base, timeBlock: { start: '09:00', end: '10:00' } };
+    const out = normalizeTask(input, now);
+    expect(out.timeBlock).not.toBe(input.timeBlock);
+    if (out.timeBlock === null) throw new Error('unreachable');
+    out.timeBlock.start = '23:00';
+    expect(input.timeBlock).toEqual({ start: '09:00', end: '10:00' });
+  });
+
+  test('timeBlock 为 null 时归一化后仍是 null', () => {
+    expect(normalizeTask({ ...base, timeBlock: null }, now).timeBlock).toBeNull();
   });
 
   test('其余字段保持不变', () => {
