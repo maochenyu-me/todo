@@ -126,8 +126,9 @@ function validateTask(raw: unknown, index: number, errors: string[]): Task | nul
     errors.push(`${at}.completedAt 必须是字符串或 null`);
   }
   if (raw.note !== undefined && typeof raw.note !== 'string') errors.push(`${at}.note 必须是字符串`);
-  // `order` 缺失时回落到数组下标：这是**合法归一化**，因为 Task 4 的 `normalizeTask`
-  // 会按当前顺序给整天的任务重排 `order`，落盘的 `order` 不依赖这里的默认值。
+  // `order` 缺失时回落到数组下标：这是**合法归一化**，缺的只是这一份文件的排序提示，
+  // 不会写坏时间戳那样的真实数据。注意 `validate.ts` 的 `normalizeTask` **不重排 `order`**
+  // （它只拿到单个 task），整天 `order` 的重排由编辑器/发布流程在调用方完成。
   // 与 `createdAt`/`updatedAt` 不同——时间戳缺失会写坏数据，所以那两个必须报错。
   if (raw.order !== undefined && (typeof raw.order !== 'number' || !Number.isFinite(raw.order))) {
     errors.push(`${at}.order 必须是数字`);
