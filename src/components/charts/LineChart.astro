@@ -7,9 +7,20 @@
  * 是可以点或值得逐个读的，而这张图上唯一可靠的东西是整条线的方向。
  * 颜色只取设计令牌（`--foreground` 的墨色、`--border` 的轴线），**不出现任何十六进制**。
  *
- * 零 JS：本组件只产出静态内联 `<svg>`，没有 `<script>`、没有 `client:*`。
+ * 本组件零逻辑：坐标、路径、首尾标签、空态判定全部由 `planLine()` 算好
+ * （除零、越界、单点退化都在 `src/lib/chart.ts` 有单测）。
+ *
+ * 零 JS：只产出静态内联 `<svg>`，没有 `<script>`、没有 `client:*`。
+ *
+ * ## 尺寸：自然宽度 + 只缩不放
+ *
+ * 画布输出 `width`/`height` 属性的自然尺寸（`LINE_GEOMETRY.width` = 300 用户单位），
+ * 外层只加 `max-w-full` + `h-auto`：容器够宽就按 300px 原样画（轴文字 13px），
+ * 窄到 280px（320px 屏的内容区）时等比缩 0.93 倍（12.1px），仍然可读。
+ * 不用 `w-full`——那会在桌面端把画布拉宽 1.8 倍，轴文字涨到 24px。
  */
 import EmptyState from '../EmptyState.astro';
+import { LINE_GEOMETRY, planLine } from '../../lib/chart';
 
 interface Props {
   /**
@@ -17,93 +28,22 @@ interface Props {
    * `y` 是**比例值 0..1**（如完成率），不是百分数。
    */
   points: { x: string; y: number }[];
-  /** 画布高度（像素）。缺省 120；非正数 / `NaN` / `Infinity` 视为没传。 */
+  /** 画布高度（像素）。缺省 120；非法值回落到 120，超出 60..320 的夹进区间。 */
   height?: number;
 }
 
-const { points, height: requestedHeight } = Astro.props;
+const { points, height } = Astro.props;
 
-/** 非有限值一律按 0，其余夹进 [0, 1]——图上不会出现 NaN 坐标，也不会冲出画布。 */
-function ratio(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  if (value < 0) return 0;
-  return value > 1 ? 1 : value;
-}
+const plan = planLine({ points, height });
 
-/** 画布高度归一化：只接受 60..320 之间的整数，其余回落到 120。 */
-function canvasHeight(given: number | undefined): number {
-  const DEFAULT = 120;
-  if (given === undefined) return DEFAULT;
-  if (!Number.isFinite(given)) return DEFAULT;
-  const n = Math.round(given);
-  if (n < 60) return 60;
-  return n > 320 ? 320 : n;
-}
-
-/* ---- 几何：画布宽度固定，横轴按点数均分，坐标保留两位小数（不让浮点尾巴印进 HTML） ---- */
-
-const VIEW_W = 360;
-const PAD_LEFT = 30;
-const PAD_RIGHT = 6;
-const PAD_TOP = 8;
-const PAD_BOTTOM = 16;
-/** 轴文字的尺寸（用户单位）。画布等比缩放，桌面端渲染出来约 12px。 */
-const FONT = 8;
-
-const h = canvasHeight(requestedHeight);
-const plotW = VIEW_W - PAD_LEFT - PAD_RIGHT;
-const plotH = h - PAD_TOP - PAD_BOTTOM;
-const baselineY = h - PAD_BOTTOM;
-const topY = PAD_TOP;
-
-/** 保留两位小数：坐标里的浮点尾巴既没用，又让产物 HTML 变得难读。 */
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
-
-const samples = points.map((point) => ({ x: point.x, y: ratio(point.y) }));
-const hasPoints = samples.length > 0;
-
-/** 只有一个点时横轴没有跨度，把 `t` 固定为 0，避免除以 0。 */
-function pointX(index: number): number {
-  if (samples.length <= 1) return round2(PAD_LEFT);
-  return round2(PAD_LEFT + (plotW * index) / (samples.length - 1));
-}
-
-function pointY(value: number): number {
-  return round2(baselineY - plotH * value);
-}
-
-/**
- * 路径：单条 `M/L` 折线。
- *
- * 只有一个点时折线退化成一个点、画不出长度（不画装饰圆点，也就不补点），
- * 但数值仍在下面那张表里——图缺一个像素，数字不能缺。
- */
-const linePath = samples
-  .map((sample, index) => `${index === 0 ? 'M' : 'L'}${pointX(index)} ${pointY(sample.y)}`)
-  .join(' ');
-
-/** 横轴只标首尾两个日期：90 个日期全标出来会糊成一条墨带。 */
-const firstLabel = samples[0]?.x ?? '';
-const lastLabel = samples[samples.length - 1]?.x ?? '';
-/** 只有一个点时首尾重合，标一次就够（重复标会叠字）。 */
-const showLastLabel = samples.length > 1;
-
-/** 纵轴刻度：0% 与 100%。中间不画网格线——一条线加两个数字已经够读。 */
-const axisLabels = [
-  { label: '100%', y: round2(topY) },
-  { label: '0%', y: round2(baselineY) },
-];
-
-/** 图形的可访问名：覆盖范围、点数、纵轴口径。具体读数在下面的表格里。 */
+/** 图形可访问名：覆盖范围、点数、纵轴口径。具体读数在下面的表格里。 */
 const ariaLabel =
-  `折线图：从 ${firstLabel} 到 ${lastLabel} 共 ${samples.length} 个点的每日完成率` +
-  '，纵轴 0% 到 100%';
+  `折线图：从 ${plan.firstLabel} 到 ${plan.lastLabel} 共 ${plan.samples.length} 个点` +
+  '的每日完成率，纵轴 0% 到 100%';
 ---
 
 {
-  !hasPoints ? (
+  !plan.hasPoints ? (
     <EmptyState
       title="还没有可以连成线的点"
       hint="这段时间里没有可以计算的完成率。写下几天，这条线就会从左边开始长。"
@@ -118,38 +58,40 @@ const ariaLabel =
       <svg
         role="img"
         aria-label={ariaLabel}
-        viewBox={`0 0 ${VIEW_W} ${h}`}
-        class="block h-auto w-full text-foreground"
+        viewBox={`0 0 ${plan.width} ${plan.height}`}
+        width={plan.width}
+        height={plan.height}
+        class="block h-auto max-w-full text-foreground"
       >
         {/* 轴：底边一条横线，左边一条竖线。纯 <line>，没有刻度线阵。 */}
         <line
-          x1={PAD_LEFT}
-          y1={baselineY}
-          x2={VIEW_W - PAD_RIGHT}
-          y2={baselineY}
+          x1={plan.plotLeft}
+          y1={plan.baselineY}
+          x2={plan.plotLeft + plan.plotWidth}
+          y2={plan.baselineY}
           class="text-border"
           stroke="currentColor"
           stroke-width="1"
           vector-effect="non-scaling-stroke"
         />
         <line
-          x1={PAD_LEFT}
-          y1={topY}
-          x2={PAD_LEFT}
-          y2={baselineY}
+          x1={plan.plotLeft}
+          y1={plan.topY}
+          x2={plan.plotLeft}
+          y2={plan.baselineY}
           class="text-border"
           stroke="currentColor"
           stroke-width="1"
           vector-effect="non-scaling-stroke"
         />
 
-        {/* 纵轴读数：0% 与 100%，贴在左轴外侧。 */}
-        {axisLabels.map((axis) => (
+        {/* 纵轴读数：100% 与 0%，贴在左轴外侧。 */}
+        {plan.axisLabels.map((axis) => (
           <text
-            x={PAD_LEFT - 5}
-            y={axis.y + 3}
+            x={plan.plotLeft - 6}
+            y={axis.y + 4}
             text-anchor="end"
-            font-size={FONT}
+            font-size={LINE_GEOMETRY.axisFont}
             class="text-muted-foreground"
             fill="currentColor"
           >
@@ -158,9 +100,9 @@ const ariaLabel =
         ))}
 
         {/* 折线本体：1.5px，圆头圆角只在拐点处，不带填充、不带阴影。
-            `vector-effect` 让 1.5px 在任何缩放下都是 1.5px（viewBox 被拉宽时不跟着变粗）。 */}
+            `vector-effect` 让 1.5px 在任何缩放下都是 1.5px（viewBox 被缩小时不跟着变细）。 */}
         <path
-          d={linePath}
+          d={plan.path}
           fill="none"
           stroke="currentColor"
           stroke-width="1.5"
@@ -169,28 +111,28 @@ const ariaLabel =
           vector-effect="non-scaling-stroke"
         />
 
-        {/* 横轴：首尾两个日期，贴着画布两端。 */}
+        {/* 横轴：首尾两个日期，贴着绘图区两端。 */}
         <text
-          x={PAD_LEFT}
-          y={h - 4}
+          x={plan.plotLeft}
+          y={plan.height - 5}
           text-anchor="start"
-          font-size={FONT}
+          font-size={LINE_GEOMETRY.axisFont}
           class="text-muted-foreground"
           fill="currentColor"
         >
-          {firstLabel}
+          {plan.firstLabel}
         </text>
         {
-          showLastLabel ? (
+          plan.showLastLabel ? (
             <text
-              x={VIEW_W - PAD_RIGHT}
-              y={h - 4}
+              x={plan.plotLeft + plan.plotWidth}
+              y={plan.height - 5}
               text-anchor="end"
-              font-size={FONT}
+              font-size={LINE_GEOMETRY.axisFont}
               class="text-muted-foreground"
               fill="currentColor"
             >
-              {lastLabel}
+              {plan.lastLabel}
             </text>
           ) : null
         }
@@ -202,7 +144,7 @@ const ariaLabel =
         不保留小数——图上读不出 1% 以下的差别，表格里也不必假装读得出。
       */}
       <table class="sr-only">
-        <caption>图表数值：{samples.length} 个点的完成率</caption>
+        <caption>图表数值：{plan.samples.length} 个点的完成率</caption>
         <thead>
           <tr>
             <th scope="col">日期</th>
@@ -210,7 +152,7 @@ const ariaLabel =
           </tr>
         </thead>
         <tbody>
-          {samples.map((sample) => (
+          {plan.samples.map((sample) => (
             <tr>
               <th scope="row">{sample.x}</th>
               <td>{Math.round(sample.y * 100)}%</td>
