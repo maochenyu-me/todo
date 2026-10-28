@@ -7,10 +7,18 @@
  * - 超出 `maxVisible` 的标签同样不建页：索引里看不到的标签不该有一个只有地址栏知道的页面，
  *   否则就出现「任何入口都找不到、但手输 URL 能打开」的孤儿页。
  *
- * **URL 编码**：标签是中文、可能带空格或标点。`params.tag` 传的是**未编码的原值**，
- * Astro 把它编码进产物路径；页面里的链接走 `tagPath()`（先 `encodeURIComponent` 再
- * `withBase`）。两条路径因此指向同一串字节——构建验证对一个纯中文标签和一个含空格的
- * 标签各做了一次往返确认。
+ * **URL 编码**（改之前先读这段，别把它「简化」回去）：`params.tag` 传的是
+ * **`tagSegment(tag)` 预转义后的段**，不是原始标签；页面里的链接走 `tagPath()`，
+ * 它内部用的是**同一个** `tagSegment()`。两侧共用一次变换，所以「路由名」与
+ * 「链接」指向同一串字节这件事是**构造出来的**，不是靠两处各写一遍再祈祷相等。
+ *
+ * `tagSegment()` 复刻 Astro 的 `sanitizeParams`（`#`→`%23`、`?`→`%3F`），额外把 `/`
+ * 转成 `%2F`——`sanitizeParams` 不管 `/`，而 `a/b` 会生成 `/tags/a/b` 这个**两段** URL，
+ * 配不上单段路由，构建直接抛 `TypeError: Missing parameter: tag`（实测整站失败）。
+ *
+ * **千万不要把 `params.tag` 改回原始标签**：`#`、`?`、空格都会让产物目录名与链接
+ * 差一级编码，`#`/`?` 更是会让构建红。往返关系由 `tags.test.ts` 里对着 Astro 自己的
+ * `getRouteGenerator` 的断言钉住，改这里先去跑它。
  */
 import type { GetStaticPaths } from 'astro';
 
@@ -21,7 +29,7 @@ import TaskRow from '../../components/TaskRow.astro';
 import { loadAllEntries } from '../../lib/data';
 import { formatMedium } from '../../lib/date';
 import { capTasks } from '../../lib/paging';
-import { collectTags, entriesByTag, hasTagPage, tagSegment } from '../../lib/tags';
+import { collectTags, entriesByTag, hasTagPage, tagPath, tagRouteParams } from '../../lib/tags';
 import type { TagCount, TagDay } from '../../lib/tags';
 import type { Task } from '../../lib/types';
 import { withBase } from '../../lib/urls';
@@ -44,10 +52,10 @@ export const getStaticPaths = (() => {
   const routable = tags.filter((item) => item.count > 0 && hasTagPage(item.tag));
 
   return routable.map(({ tag }) => ({
-    // `params.tag` 用 **`tagSegment()` 预转义后的段**，不用原始标签：
-    // 这样 Astro 的 `sanitizeParams` 对它是恒等变换，产物目录名就与
+    // `params.tag` 走 `tagRouteParams()`（内部即 `tagSegment(tag)`），**绝不能用原始标签**：
+    // 这样 Astro 的 `sanitizeParams` 对我们的入参是恒等变换，产物目录名就与
     // `tagPath()` 生成的 href 逐字节一致。原始标签随 props 交给页面显示。
-    params: { tag: tagSegment(tag) },
+    params: tagRouteParams(tag),
     props: { tag, days: entriesByTag(entries, tag), allTags: tags },
   }));
 }) satisfies GetStaticPaths;
@@ -92,9 +100,26 @@ for (const flat of shown) {
 function dayHref(dateKey: string): string {
   return withBase(`/date/${dateKey}`);
 }
+
+/**
+ * canonical 必须显式给，不能靠 `BaseLayout` 的默认推导。
+ *
+ * 默认推导是 `new URL(Astro.url.pathname, site.url)`，而 `Astro.url.pathname` 是
+ * **原始编码串**：`C#` 这一页的 pathname 是 `/tags/C%23/`，推出的 canonical 是
+ * `https://site/tags/C%23/`。可这个 canonical 再被**完整解码一次**就变成 `C#`，
+ * 而磁盘上的目录叫 `C%23`（字面百分号）——**canonical 指向一个不存在的地址**。
+ *
+ * 实测（本仓库 10 个标签页里有 5 个中招）：`C#`、`#号`、`a?b`、`a/b`、`工作 & C#`。
+ * 纯中文（`工作`）、带空格（`a b`）、带 `&`（`x&y=z`）都没问题——所以这是**只在
+ * 段里出现 `%XX` 字面量时**才发作的一类，靠肉眼抽查很容易漏掉。
+ *
+ * 解法就是显式传 `tagPath(tag)`：那是**唯一**与产物目录逐字节对齐的地址，
+ * 也正是页面自己的真实位置。SEO 层面不再有「规范地址 404」这种自相矛盾。
+ */
+const canonicalHref = tagPath(tag);
 ---
 
-<BaseLayout title={`#${tag}`} activeNav="tags">
+<BaseLayout title={`#${tag}`} activeNav="tags" canonicalHref={canonicalHref}>
   <header class="pb-6">
     <h1 class="text-[1.375rem] font-semibold tracking-[-0.01em] text-foreground">
       <span class="text-muted-foreground">#</span>{tag}

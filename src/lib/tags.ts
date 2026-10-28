@@ -132,9 +132,15 @@ export function entriesByTag(entries: DayEntry[], tag: string): TagDay[] {
  * | `工作` | `工作` |
  * | `100%` | `100%` |
  *
- * 浏览器请求只会被解码**一次**，所以 href 必须满足 `decodeURI(href) === 产物目录名`。
- * 若拿 `encodeURIComponent(tag)` 当 href，`#号` 得到 `/tags/%23%E5%8F%B7`，解码一次是
- * `#号`，而磁盘上找的是 `%23号` —— **404**。`C#`、`a?b` 同理。
+ * 产物目录名就是 `sanitizeParams` 的输出；而浏览器/静态托管把请求路径**完整解码一次**
+ * 再去找目录。所以 href 必须满足
+ * `decodeURIComponent(href 的路径段) === 产物目录名`。
+ * 若拿 `encodeURIComponent(tag)` 当 href，`#号` 得到 `/tags/%23%E5%8F%B7`，
+ * 完整解码一次是 `#号`，而磁盘上找的是 `%23号` —— **404**。`C#`、`a?b` 同理。
+ *
+ * **验的时候必须用 `decodeURIComponent`，不能用 `decodeURI`**：后者**不解**
+ * `%23`/`%3F` 这类保留字符的转义，`decodeURI('/tags/%23%E5%8F%B7')` 会返回 `%23号`，
+ * 看起来正好等于目录名——旧的有 bug 的实现就是这么被判成「通过」的。见 `tagPath`。
  *
  * ## 只转 `#`、`?`、`/`，**不转 `%`**
  *
@@ -160,6 +166,19 @@ export function tagSegment(tag: string): string {
     .replace(/#/g, '%23')
     .replace(/\?/g, '%3F')
     .replace(/\//g, '%2F');
+}
+
+/**
+ * `/tags/[tag]` 的路由参数。**页面必须用这个函数**，测试也断言它——两边同一个来源，
+ * 所以「页面里传的值」与「测试验的值」不可能分叉。
+ *
+ * 单独抽出来的理由很实际：评审指出「测试自己重算 `tagSegment(tag)`」的话，
+ * 页面里把它改回 `params: { tag }` 也不会被任何断言发现。有了这个入口，
+ * `tags.test.ts` 可以既断言它的输出与 Astro 的产物段一致，又对页面源码做一次
+ * 「真的调用了它、且没有把原始标签直传」的漂移检查。
+ */
+export function tagRouteParams(tag: string): { tag: string } {
+  return { tag: tagSegment(tag) };
 }
 
 /**

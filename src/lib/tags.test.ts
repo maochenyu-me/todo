@@ -1,9 +1,17 @@
-import { pathToFileURL } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { beforeAll, describe, expect, test } from 'vitest';
 
-import { collectTags, entriesByTag, hasTagPage, tagPath, tagSegment } from './tags';
+import {
+  collectTags,
+  entriesByTag,
+  hasTagPage,
+  tagPath,
+  tagRouteParams,
+  tagSegment,
+} from './tags';
 import type { DayEntry, Task } from './types';
 
 function taskOf(id: string, tags: string[], done = false): Task {
@@ -173,32 +181,37 @@ describe('tagPath', () => {
 });
 
 /**
- * ## 这条测试为什么这样写（别再改回「解码回原标签」那种同义反复）
+ * ## 这组测试为什么这样写（别再改回「解码回原标签」那种同义反复）
  *
  * 旧版是 `decodeURIComponent(href.slice(...)) === tag`。那句话只证明了
  * `encodeURIComponent` / `decodeURIComponent` 互为逆函数——**与被点开的页面能不能
- * 落到磁盘上无关**，也正因为如此它放过了真实的 404：`encodeURIComponent('#号')`
- * 得到 `%23%E5%8F%B7`，解回 `#号` 完全成立，而 Astro 把产物写到 `%23号` 目录，
- * 于是链接 404。
+ * 落到磁盘上无关**，也正因为如此它放过了真实的 404。
  *
- * 真正的判据是「**href 解码一次之后，是不是那个产物目录名**」。为了不靠人肉推导
- * Astro 的编码规则，这里直接调 Astro 自己的 `getRouteGenerator`
- * （`astro/dist/core/routing/generator.js`，即 `sanitizeParams` 的调用点）
- * 来算出它会为 `params.tag` 生成什么 pathname，再用与
- * `dist/core/build/generate.js` 相同的方式（`encodeURI` → `fileURLToPath()` 的
- * 百分号解码）折成最终目录名。
+ * 修好之后又踩到第二个坑，一并记在这里：**「params → pathname → params」的往返本身
+ * 也是盲的**。`getParams()` 只是拿正则去切 pathname 的原始捕获组、不做任何解码，
+ * 所以只要 `getStaticPaths` 和 href 用的是同一个（哪怕是错的）变换，往返必然成立。
+ * 实测：把 `tagSegment` 换成 `encodeURIComponent`（过度转义），往返断言**全绿**，
+ * 而真实构建报 `NoMatchingStaticPathFound`、`dist/tags/` 根本不产出。
  *
- * 这样只要 `tagSegment()` 与 Astro 的规则差一级，`decodeURI(href)` 就不再等于
- * Astro 的目录名，测试立刻红。文案里刻意不用 `decodeURIComponent` 解码整个 href：
- * 那会把 `/` 也一起吃掉。
+ * 真正能证伪的判据只有一条——**与 Astro 对「原始标签」的处理对齐**：
+ *
+ * ```
+ * tagSegment(原始标签) === Astro 为 params: { tag: 原始标签 } 生成的路径段
+ * ```
+ *
+ * 右边是 `sanitizeParams` 的唯一权威输出。这条断言在「过度转义」和「转义不足」
+ * 两个方向都会红（实测 `encodeURIComponent` 让 12 个用例里 10 个变红）。
+ * 唯一的刻意偏离是 `/`：`sanitizeParams` 不管它，而 `a/b` 会让路由变成两段、
+ * 构建硬失败，所以 `tagSegment` 必须额外把它转成 `%2F`——这一条例外单独断言。
  */
-describe('tagPath 生成的链接必须命中 Astro 实际写出的产物目录', () => {
+describe('tagSegment 必须与 Astro 对同一个标签的产物段一致', () => {
   /** `/tags/[tag]` 的 segments 形状。 */
   const SEGMENTS = [
     [{ content: 'tags', dynamic: false, spread: false }],
     [{ content: 'tag', dynamic: true, spread: false }],
   ];
 
+  /** Astro 的路由生成器；给**原始**标签，返回它要落盘的 pathname。 */
   let generate: (params: Record<string, string>) => string;
 
   beforeAll(async () => {
@@ -209,39 +222,13 @@ describe('tagPath 生成的链接必须命中 Astro 实际写出的产物目录'
   });
 
   /**
-   * Astro 写盘时用的目录名：`generatePath()` 里 `encodeURI(pathname)` 交给
-   * `getOutFolder()`，而 `fileURLToPath()` 会把 URL 路径的百分号转义解回去。
-   * 两步互逆，所以结果就是 pathname 本身；这里**照样走一遍**，不直接假定，
-   * 免得 Astro 哪天改了这两步的对称性。
-   */
-  /**
-   * Astro 写盘时用的**目录名**（真实字节，已用构建产物核对）。
+   * Astro 为**原始标签**生成的产物段（`sanitizeParams` 的输出）。
    *
-   * `generatePath()` 里 `encodeURI(pathname)` 交给 `getOutFolder()`，写盘时
-   * `fileURLToPath()` 再把 URL 路径的转义解回去。两步互逆 ⇒ 结果就是 pathname 本身。
-   * 这里照样走一遍、不直接假定，免得 Astro 改了这两步的对称性而我们没发现。
-   *
-   * 注意用 `decodeURIComponent`（与 `segmentFromHref` 同一把尺子）：`decodeURI` 会
-   * 保留 `%23`，那样两边都会「看起来对」，这条测试就退回成同义反复了。
+   * 写盘时 `encodeURI(pathname)` 与 `fileURLToPath()` 的百分号解码互为逆运算，
+   * 所以落到磁盘上的目录名就是这一段的字面值：`C#` → `C%23`、`工作` → `工作`。
    */
-  function artifactDir(tagSegmentValue: string): string {
-    const pathname = generate({ tag: tagSegmentValue });
-    const encoded = encodeURI(pathname);
-    return decodeURIComponent(encoded.slice('/tags/'.length));
-  }
-
-  /**
-   * 浏览器/静态托管拿到 href 后解析出的**路径段**。
-   *
-   * 用 `decodeURIComponent` 而不是 `decodeURI`：这一步是整个修复的要害。
-   * `decodeURI` **不会**解 `%23`、`%3F` 这类「保留字符」的转义，于是
-   * `decodeURI('/tags/%23%E5%8F%B7')` 得到 `%23号`——看起来正好等于磁盘目录名，
-   * 于是旧的错误实现也能「通过」这种检查（假绿）。真实托管是把段完整解一次，
-   * `%23` 真的变成 `#`，去找 `#号` 目录，404。
-   */
-  function segmentFromHref(href: string): string {
-    const start = href.indexOf('/tags/') + '/tags/'.length;
-    return decodeURIComponent(href.slice(start));
+  function astroSegmentForRaw(rawTag: string): string {
+    return generate({ tag: rawTag }).slice('/tags/'.length);
   }
 
   const CASES = [
@@ -251,7 +238,6 @@ describe('tagPath 生成的链接必须命中 Astro 实际写出的产物目录'
     'C#',
     '#号',
     'a?b',
-    'a/b',
     'a b',
     'x&y=z',
     '100%',
@@ -259,43 +245,94 @@ describe('tagPath 生成的链接必须命中 Astro 实际写出的产物目录'
     '工作 & C#',
   ];
 
-  test('每个标签的 href 解码一次后等于 Astro 的产物目录名', () => {
+  test('每个标签：tagSegment 的结果等于 Astro 为该标签生成的产物段', () => {
     for (const tag of CASES) {
-      const href = tagPath(tag, '/');
-      expect({ tag, dir: segmentFromHref(href) }).toEqual({
-        tag,
-        dir: artifactDir(tagSegment(tag)),
-      });
+      expect(tagSegment(tag), `标签 ${tag}`).toBe(astroSegmentForRaw(tag));
     }
   });
 
-  test('getStaticPaths 用的段与 href 用的段是同一个（否则路由名与链接必然分叉）', () => {
+  test('过度转义会红：encodeURIComponent 与 Astro 的段不一致（反证本断言非空）', () => {
+    // 这条不是为了测 encodeURIComponent，而是给上一条做**反证**：
+    // 若把 tagSegment 换成 encodeURIComponent，上一条会红——这里把「为什么红」写死。
+    const overEscaped = CASES.filter((tag) => encodeURIComponent(tag) !== astroSegmentForRaw(tag));
+    expect(overEscaped.length).toBeGreaterThan(0);
+    // 具体到最要命的几个：中文、空格、& 都会被过度转义。
+    for (const tag of ['工作', '我的 计划', 'C++ & Rust']) {
+      expect(encodeURIComponent(tag), `标签 ${tag} 应被过度转义`).not.toBe(astroSegmentForRaw(tag));
+    }
+  });
+
+  test('/ 是唯一刻意偏离 Astro 的地方：Astro 不转它，我们转成 %2F', () => {
+    // Astro 原样保留 `/`，会生成 `/tags/a/b` 两段 URL，配不上单段路由、构建硬失败。
+    expect(astroSegmentForRaw('a/b')).toBe('a/b');
+    expect(tagSegment('a/b')).toBe('a%2Fb');
+    // 除了 `/`，其余字符都与 Astro 一致（上面第一条已逐字覆盖）。
+  });
+
+  /**
+   * 这条**验的是页面真正交给 Astro 的那个值**，不是重算一遍。
+   *
+   * 评审点出的第二个盲区：旧测试自己调 `tagSegment(tag)`，于是页面里把
+   * `params` 改回 `{ tag }` 也不会有任何断言变红。这里断言
+   * `tagRouteParams()`——即 `[tag].astro` 里 `params:` 的那一行——同时再对页面
+   * 源码做一次漂移检查，确保它真的在调 `tagRouteParams` 而不是把原始标签直传。
+   */
+  test('页面交给 Astro 的 params 就是与产物段一致的那个值', () => {
     for (const tag of CASES) {
-      const fromHref = segmentFromHref(tagPath(tag, '/'));
-      // Astro 拿 getStaticPaths 的 `params.tag` 过 `sanitizeParams`，产出 pathname；
-      // 它与 href 解出来的段相等，产物目录才会是同一个。
-      const fromParams = generate({ tag: tagSegment(tag) }).slice('/tags/'.length);
-      expect(fromParams, `标签 ${tag} 的 params 段与 href 段必须一致`).toBe(fromHref);
+      const params = tagRouteParams(tag);
+      expect(params).toEqual({ tag: astroSegmentForRaw(tag) });
+      // 也钉死「不是原始标签」：≥1 个字符被转义的用例必须不同。
+      if (tagSegment(tag) !== tag) expect(params.tag).not.toBe(tag);
+    }
+  });
+
+  test('[tag].astro 真的在用 tagRouteParams，没有把原始标签直传（页面漂移检查）', () => {
+    const source = readFileSync(
+      resolve('src/pages/tags/[tag].astro'),
+      'utf8',
+    );
+    // `getStaticPaths` 里必须有 `params: tagRouteParams(tag)`。
+    expect(source).toContain('params: tagRouteParams(tag)');
+    // 绝不能退回 `params: { tag }`（原始标签直传，`#`/`?`/空格会让构建红）。
+    expect(source).not.toMatch(/params:\s*\{\s*tag\s*\}/);
+  });
+});
+
+describe('tagPath 的段与磁盘目录一致（按浏览器的解码方式核对）', () => {
+  /**
+   * 浏览器/静态托管拿到 href 后解析出的**路径段**。
+   *
+   * 用 `decodeURIComponent` 而不是 `decodeURI`：`decodeURI` **不会**解 `%23`/`%3F`
+   * 这类保留字符的转义，会给出 `%23号` 这种「看起来正好等于目录名」的假绿。
+   * 真实托管是把段完整解一次，`%23` 真的变成 `#`。
+   */
+  function segmentFromHref(href: string): string {
+    const start = href.indexOf('/tags/') + '/tags/'.length;
+    return decodeURIComponent(href.slice(start));
+  }
+
+  /** 磁盘目录名（字面值，含真实的 `%`），与 `tagSegment` 的输出相同。 */
+  function artifactDir(tag: string): string {
+    return tagSegment(tag);
+  }
+
+  test('每个标签的 href 完整解码一次后等于磁盘目录名', () => {
+    for (const tag of ['工作', '我的 计划', 'C++ & Rust', 'C#', '#号', 'a?b', 'a b', 'x&y=z', '工作 & C#']) {
+      expect(segmentFromHref(tagPath(tag, '/')), `标签 ${tag}`).toBe(artifactDir(tag));
     }
   });
 
   test('含 # / ? 的标签不再落进「编码差一级」的坑（回归护栏）', () => {
-    // 旧实现直接把 `encodeURIComponent(tag)` 当路径段。对 `#`/`?` 这类字符，
-    // `encodeURIComponent` 与 `tagSegment` 给出的段**恰好相同**，所以差别不在段本身，
-    // 而在旧版 href 只过了一次 `encodeURIComponent`、没有再过 `encodeURI`：
-    // 于是 `decodeURI(href)` 得到的是原始标签，而磁盘上是 `tagSegment` 的结果。
-    // 这条护栏钉住的正是「href 解一次必须落在 tagSegment 的产物上，而不是原始标签上」。
     for (const tag of ['C#', '#号', 'a?b']) {
       const dir = segmentFromHref(tagPath(tag, '/'));
-      expect({ tag, dir }).toEqual({ tag, dir: tagSegment(tag) });
-      // 原始标签绝不能等于产物目录名，否则说明编码根本没做。
+      // 产物目录名是 `C%23` 这种带字面 `%` 的串，绝不是原始标签本身。
+      expect(dir).toBe(tagSegment(tag));
       expect(dir).not.toBe(tag);
     }
   });
 
-  test('a/b 不再产生嵌套路径（否则 [tag] 匹配不上，构建会抛 Missing parameter）', () => {
+  test('a/b 的 href 不出现多余的层级（否则构建抛 Missing parameter）', () => {
     const href = tagPath('a/b', '/');
-    // href 里不能出现多余的 `/`：`/tags/a/b` 会让 Astro 报 Missing parameter: tag。
     expect(href).toBe('/tags/a%252Fb');
     expect(href.split('/').filter(Boolean)).toHaveLength(2); // ['tags', 'a%252Fb']
   });
