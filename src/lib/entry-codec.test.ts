@@ -30,6 +30,13 @@ function errorsOf(raw: unknown, dateKey = '2026-10-28'): string[] {
   return r.errors;
 }
 
+/** 复制 task 并去掉某个字段，用来模拟"手写 JSON 少写了一个键"。 */
+function withoutKey(task: Task, key: keyof Task): Record<string, unknown> {
+  const copy: Record<string, unknown> = { ...task };
+  delete copy[key];
+  return copy;
+}
+
 describe('validateEntry：整体形状', () => {
   test('文件名与内容 date 不符时报错并指名文件', () => {
     const r = validateEntry({ date: '2026-10-27', tasks: [] }, '2026-10-28');
@@ -77,6 +84,26 @@ describe('validateEntry：date', () => {
   test('date 不是字符串时报错', () => {
     expect(validateEntry({ date: 20261028, tasks: [] }, '2026-10-28').ok).toBe(false);
   });
+
+  test('文件名日期不合法时只产生一条错误（不重复报同一个问题）', () => {
+    const errors = errorsOf({ date: '2026-02-30', tasks: [] }, '2026-02-30');
+    expect(errors).toEqual(['文件名日期 2026-02-30 不是合法的 YYYY-MM-DD']);
+  });
+
+  test('文件名日期不合法且内容 date 合法时，仍然只有一条错误', () => {
+    const errors = errorsOf({ date: '2026-10-28', tasks: [] }, '2026-13-01');
+    expect(errors).toEqual(['文件名日期 2026-13-01 不是合法的 YYYY-MM-DD']);
+  });
+
+  test('文件名日期不合法且内容不是对象时，只有两条（文件名 + 非对象）', () => {
+    const errors = errorsOf(null, '2026-13-01');
+    expect(errors).toEqual(['文件名日期 2026-13-01 不是合法的 YYYY-MM-DD', '内容不是 JSON 对象']);
+  });
+
+  test('文件名合法但内容 date 不合法时，报 date 那条', () => {
+    const errors = errorsOf({ date: '2026-02-30', tasks: [] }, '2026-10-28');
+    expect(errors).toEqual(['date 不是合法的 YYYY-MM-DD：2026-02-30']);
+  });
 });
 
 describe('validateEntry：task 字段', () => {
@@ -98,8 +125,8 @@ describe('validateEntry：task 字段', () => {
 
   test('title 仅含空白时报错且错误信息带任务序号', () => {
     const errors = errorsOf(entryOf([validTask, { ...validTask, id: 't-2', title: '   ' }]));
-    expect(errors.join()).toContain('title');
-    expect(errors.join()).toContain('2');
+    expect(errors).toEqual(['tasks[2].title 不能为空']);
+    expect(errors[0]).toContain('tasks[2]');
   });
 
   test('done 非布尔时报错', () => {
@@ -153,11 +180,21 @@ describe('validateEntry：task 字段', () => {
     expect(errors.length).toBeGreaterThanOrEqual(3);
   });
 
-  test('手写文件可省略元数据：缺失字段填中性默认值，但必填项仍必须存在', () => {
-    const minimal = { id: 'a', title: '手写一天', done: false, priority: 0, tags: [], timeBlock: null };
-    const r = validateEntry({ date: '2026-10-28', tasks: [minimal] }, '2026-10-28');
+  test('手写文件可省略的元数据只有 completedAt/note/order/timeBlock，其余必填', () => {
+    const handWritten = {
+      id: 'a',
+      title: '手写一天',
+      done: false,
+      priority: 0,
+      tags: [],
+      timeBlock: null,
+      createdAt: '2026-10-28T01:00:00+08:00',
+      updatedAt: '2026-10-28T01:00:00+08:00',
+    };
+    const r = validateEntry({ date: '2026-10-28', tasks: [handWritten] }, '2026-10-28');
     expect(r.ok).toBe(true);
     if (!r.ok) return;
+    // order 缺失 → 数组下标；completedAt 缺失 → null；note 缺失 → ''
     expect(r.entry.tasks[0]).toEqual({
       id: 'a',
       title: '手写一天',
@@ -168,9 +205,40 @@ describe('validateEntry：task 字段', () => {
       tags: [],
       note: '',
       timeBlock: null,
-      createdAt: '',
-      updatedAt: '',
+      createdAt: '2026-10-28T01:00:00+08:00',
+      updatedAt: '2026-10-28T01:00:00+08:00',
     });
+  });
+
+  test('缺 createdAt 被拒绝并给出中文错误，不补空串', () => {
+    const errors = errorsOf(entryOf([withoutKey(validTask, 'createdAt')]));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toBe('tasks[1].createdAt 缺失');
+  });
+
+  test('缺 updatedAt 被拒绝并给出中文错误，不补空串', () => {
+    const errors = errorsOf(entryOf([withoutKey(validTask, 'updatedAt')]));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toBe('tasks[1].updatedAt 缺失');
+  });
+
+  test('createdAt / updatedAt 为空串或非字符串时同样报错', () => {
+    expect(validateEntry(entryOf([{ ...validTask, createdAt: '' }]), '2026-10-28').ok).toBe(false);
+    expect(validateEntry(entryOf([{ ...validTask, updatedAt: '   ' }]), '2026-10-28').ok).toBe(false);
+    expect(validateEntry(entryOf([{ ...validTask, createdAt: 123 }]), '2026-10-28').ok).toBe(false);
+  });
+
+  test('时间戳错误也带任务序号，便于 UI 定位', () => {
+    const errors = errorsOf(entryOf([validTask, { ...withoutKey(validTask, 'createdAt'), id: 't-2' }]));
+    expect(errors.join()).toContain('tasks[2].createdAt');
+  });
+
+  test('order 缺失回落到数组下标（合法归一化，Task 4 会重排）', () => {
+    const noOrder = withoutKey(validTask, 'order');
+    const r = validateEntry(entryOf([{ ...noOrder, id: 'a' }, { ...noOrder, id: 'b' }]), '2026-10-28');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.entry.tasks.map((t) => t.order)).toEqual([0, 1]);
   });
 
   test('必填项缺失仍然报错，不会被默认值掩盖', () => {
@@ -179,8 +247,9 @@ describe('validateEntry：task 字段', () => {
   });
 
   test('timeBlock 省略（undefined）视同 null', () => {
-    const withoutTimeBlock = { id: 'a', title: '标题', done: false, priority: 0, tags: [] };
-    expect(validateEntry({ date: '2026-10-28', tasks: [withoutTimeBlock] }, '2026-10-28').ok).toBe(true);
+    const r = validateEntry(entryOf([withoutKey(validTask, 'timeBlock')]), '2026-10-28');
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.entry.tasks[0]?.timeBlock).toBeNull();
   });
 
   test('未知字段被丢弃，输出始终是定形的 Task', () => {
@@ -211,6 +280,28 @@ describe('serializeEntry / parseEntry', () => {
     const back = parseEntry(serializeEntry(e), '2026-10-28');
     expect(back.ok).toBe(true);
     if (back.ok) expect(back.entry).toEqual(e);
+  });
+
+  test('serializeEntry 往返稳定（timeBlock 非 null，覆盖 canonicalTask 的 timeBlock 重建）', () => {
+    const withBlock: Task = { ...validTask, timeBlock: { start: '09:00', end: '10:30' } };
+    const e: DayEntry = { date: '2026-10-28', tasks: [withBlock] };
+
+    const text = serializeEntry(e);
+    expect(JSON.parse(text).tasks[0].timeBlock).toEqual({ start: '09:00', end: '10:30' });
+
+    const back = parseEntry(text, '2026-10-28');
+    expect(back.ok).toBe(true);
+    if (back.ok) {
+      expect(back.entry).toEqual(e);
+      expect(back.entry.tasks[0]?.timeBlock).toEqual({ start: '09:00', end: '10:30' });
+    }
+  });
+
+  test('serializeEntry 不会把缺失的时间戳写成空串（因为缺失已被校验拒绝）', () => {
+    const raw = { date: '2026-10-28', tasks: [withoutKey(validTask, 'createdAt')] };
+    const r = validateEntry(raw, '2026-10-28');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.join()).toContain('createdAt');
   });
 
   test('serializeEntry 使用 2 空格缩进并以换行结尾', () => {

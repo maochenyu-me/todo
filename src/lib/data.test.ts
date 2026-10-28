@@ -160,6 +160,38 @@ describe('loadAllEntries', () => {
     expect(errors).toHaveLength(1);
     expect(errors[0]?.path).toContain('2026-02-30.json');
   });
+
+  test('文件名日期不合法时该文件的错误只有一条（不重复报同一个问题）', () => {
+    writeFileSync(
+      join(activeDir, '2026-02-30.json'),
+      JSON.stringify({ date: '2026-02-30', tasks: [] }),
+      'utf8',
+    );
+
+    const { errors } = loadAllEntries(activeDir, archiveDir);
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toBe('文件名日期 2026-02-30 不是合法的 YYYY-MM-DD');
+  });
+
+  test('任务缺 createdAt/updatedAt 的文件进 errors，不会被补空串写回', () => {
+    writeFileSync(
+      join(activeDir, '2026-10-28.json'),
+      JSON.stringify({
+        date: '2026-10-28',
+        tasks: [{ id: 'a', title: '缺时间戳', done: false, priority: 1, tags: [], timeBlock: null }],
+      }),
+      'utf8',
+    );
+
+    const { entries, errors } = loadAllEntries(activeDir, archiveDir);
+
+    expect(entries).toEqual([]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.path).toContain('2026-10-28.json');
+    expect(errors[0]?.message).toContain('createdAt');
+    expect(errors[0]?.message).toContain('updatedAt');
+  });
 });
 
 describe('readDayFromDisk', () => {

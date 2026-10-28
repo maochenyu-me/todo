@@ -40,14 +40,41 @@ function requireString(v: unknown, fallback: string): string {
 }
 
 /**
+ * 校验必填的时间戳字段（`createdAt`/`updatedAt`）。
+ *
+ * 这两个字段属于固定 schema，**缺失即错误**，绝不补空串：写盘时补 `""` 会得到一个
+ * 永久性的非 ISO 值，污染已提交的数据文件。缺失与空串分别给出不同文案，
+ * 但同一次校验里最多只报一条。
+ */
+function requireTimestamp(
+  raw: Record<string, unknown>,
+  key: 'createdAt' | 'updatedAt',
+  at: string,
+  errors: string[],
+): string | null {
+  const value = raw[key];
+  if (value === undefined || value === null) {
+    errors.push(`${at}.${key} 缺失`);
+    return null;
+  }
+  if (typeof value !== 'string' || value.trim() === '') {
+    errors.push(`${at}.${key} 不能为空`);
+    return null;
+  }
+  return value;
+}
+
+/**
  * 校验单个 task，把错误写进 `errors`（前缀带 1 起始的序号）。
  *
  * 必须字段：`id` 非空、`title` 去空白后非空、`done` 布尔、`priority` ∈ {0,1,2}、
- * `tags` 为字符串数组、`timeBlock` 为 `null` 或 `end > start`。
- * 其余元数据（`completedAt`/`order`/`note`/`createdAt`/`updatedAt`）不是必填：
- * 存在时按类型校验，缺失时填中性默认值。未知字段被丢弃（输出始终是定形的 `Task`）。
- * 注意"缺失"与"越界"不同：缺失是可接受的省略（`timeBlock` 写成 `undefined` 视同 `null`），
- * 越界（`priority: 5`、`done: "true"`……）一律报错，绝不改正。
+ * `tags` 为字符串数组、`timeBlock` 为 `null` 或 `end > start`、
+ * `createdAt`/`updatedAt` 为非空字符串。
+ * 只有下列字段可以省略并给出中性默认值：`completedAt`（→ null）、`note`（→ ''）、
+ * `order`（→ 数组下标）、`timeBlock`（`undefined` 视同 `null`）。
+ * 未知字段被丢弃（输出始终是定形的 `Task`）。
+ * 注意"缺失"与"越界"不同：缺失只对上面列出的可省字段成立，越界
+ * （`priority: 5`、`done: "true"`……）一律报错，绝不改正。
  */
 function validateTask(raw: unknown, index: number, errors: string[]): Task | null {
   const at = `tasks[${index + 1}]`;
@@ -99,12 +126,14 @@ function validateTask(raw: unknown, index: number, errors: string[]): Task | nul
     errors.push(`${at}.completedAt 必须是字符串或 null`);
   }
   if (raw.note !== undefined && typeof raw.note !== 'string') errors.push(`${at}.note 必须是字符串`);
+  // `order` 缺失时回落到数组下标：这是**合法归一化**，因为 Task 4 的 `normalizeTask`
+  // 会按当前顺序给整天的任务重排 `order`，落盘的 `order` 不依赖这里的默认值。
+  // 与 `createdAt`/`updatedAt` 不同——时间戳缺失会写坏数据，所以那两个必须报错。
   if (raw.order !== undefined && (typeof raw.order !== 'number' || !Number.isFinite(raw.order))) {
     errors.push(`${at}.order 必须是数字`);
   }
-  for (const key of ['createdAt', 'updatedAt'] as const) {
-    if (raw[key] !== undefined && typeof raw[key] !== 'string') errors.push(`${at}.${key} 必须是字符串`);
-  }
+  const createdAt = requireTimestamp(raw, 'createdAt', at, errors);
+  const updatedAt = requireTimestamp(raw, 'updatedAt', at, errors);
 
   if (errors.length > before) return null;
 
@@ -118,8 +147,8 @@ function validateTask(raw: unknown, index: number, errors: string[]): Task | nul
     tags: [...(tags as string[])],
     note: requireString(raw.note, ''),
     timeBlock,
-    createdAt: requireString(raw.createdAt, ''),
-    updatedAt: requireString(raw.updatedAt, ''),
+    createdAt: createdAt as string,
+    updatedAt: updatedAt as string,
   };
 }
 
@@ -132,17 +161,19 @@ function validateTask(raw: unknown, index: number, errors: string[]): Task | nul
 export function validateEntry(raw: unknown, dateKey: string): EntryResult {
   const errors: string[] = [];
 
-  if (!isValidDateKey(dateKey)) {
-    errors.push(`文件名日期 ${dateKey} 不是合法的 YYYY-MM-DD`);
-  }
+  const fileNameKeyOk = isValidDateKey(dateKey);
 
   if (!isRecord(raw)) {
+    if (!fileNameKeyOk) errors.push(`文件名日期 ${dateKey} 不是合法的 YYYY-MM-DD`);
     errors.push('内容不是 JSON 对象');
     return { ok: false, errors };
   }
 
+  // 文件名日期不合法时只报一条：同一个问题（`dateKey` 本身有错）不再被 `date` 分支重复报一遍。
   const date = raw.date;
-  if (typeof date !== 'string' || !isValidDateKey(date)) {
+  if (!fileNameKeyOk) {
+    errors.push(`文件名日期 ${dateKey} 不是合法的 YYYY-MM-DD`);
+  } else if (typeof date !== 'string' || !isValidDateKey(date)) {
     errors.push(`date 不是合法的 YYYY-MM-DD：${String(date)}`);
   } else if (date !== dateKey) {
     errors.push(`date 应为文件名日期 ${dateKey}，实际为 ${date}`);
