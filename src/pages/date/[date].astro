@@ -1,9 +1,14 @@
 ---
 /**
- * 单日页 `/date/<YYYY-MM-DD>`：与今天页同版式，只渲染**磁盘上确实有记录**的日期。
+ * 单日页 `/date/<YYYY-MM-DD>`：与今天页同版式，只为**磁盘上确实有文件**的日期生成。
  *
- * `getStaticPaths` 从 `loadAllEntries` 取全部有数据的日期（已升序、已去重），
- * 因此不会为空白日期生成成千上万个页面，页面里也永远不需要处理「这一天没文件」。
+ * 「有文件」包括两种：能读出来的（正常渲染）与读不出来的（坏 JSON、内容不合法）。
+ * 后者也生成页面，理由有两条：
+ * - 否则那个 URL 会 404，而前后天导航又知道「这天有东西」，读者点过去只看到一片空白；
+ * - 坏文件是真故障，给它一个说得清楚的页面（「记录在，但读不出来」）比让它消失更诚实。
+ * 构建期还会为每个坏文件打一条 `console.warn`，CI 日志里能直接看见是哪一份文件坏了。
+ *
+ * 完全没有文件的日期**不**生成页面——那才是「空白的一天」，不该占一个 URL。
  *
  * canonical：`/date/<今天>` 与 `/` 内容完全相同，规范地址指回 `/`；其余日期指向自身。
  */
@@ -17,27 +22,49 @@ import { withBase } from '../../lib/urls';
 import { siteConfig } from '../../../site.config.ts';
 
 export const getStaticPaths = (() => {
-  // Astro 会把 getStaticPaths 单独提成一个 chunk，它**看不见**本文件顶层的变量，
-  // 所以配置只能在这里就地读一次。
+  // Astro 会把 getStaticPaths 单独提成一个 chunk，它**看不见**本文件顶层的任何东西
+  // （连常量也算），所以正则与配置都只能在这里就地定义。别再往外提。
+  const dateFromErrorPath = /(\d{4}-\d{2}-\d{2})\.json$/;
   const { activeDir, archiveDir } = siteConfig.data;
-  const { entries } = loadAllEntries(activeDir, archiveDir);
-  // 文件名不一定合法（手改/异常归档），页面路径必须是真日期，否则直接跳过。
-  const withData = new Set(entries.map((entry) => entry.date).filter(isValidDateKey));
+  const { entries, errors } = loadAllEntries(activeDir, archiveDir);
+
+  // 坏文件必须喊出来，否则每天都在「悄悄 404」而没人知道。构建照常继续（spec 要求）。
+  const corruptDates = new Set<string>();
+  for (const error of errors) {
+    const matched = dateFromErrorPath.exec(error.path);
+    if (matched) {
+      const dateKey = matched[1] as string;
+      // 文件名日期可能是非法日历日（2026-02-30.json）：报出来，但不可能为它生成页面。
+      if (isValidDateKey(dateKey)) corruptDates.add(dateKey);
+      else console.warn(`[单日页] 跳过非法日期文件 ${error.path}：文件名日期不是合法的 YYYY-MM-DD`);
+      continue;
+    }
+    // 目录级故障（EACCES 之类）不指向某一天，无法归到具体页面，但绝不能不响。
+    console.warn(`[单日页] 读取数据时出错，无法确定受影响的日期：${error.path} —— ${error.message}`);
+  }
+  for (const dateKey of corruptDates) {
+    const detail = errors.filter((error) => error.path.includes(dateKey)).map((e) => e.message);
+    console.warn(`[单日页] ${dateKey} 的记录文件存在但读不出来，将生成一个说明页面而非跳过：${detail.join('；')}`);
+  }
+
   const byDate = new Map(entries.map((entry) => [entry.date, entry]));
+  // 正常日期 + 坏日期：两者都有文件，都该有个页面。
+  const withFile = new Set([...byDate.keys(), ...corruptDates].filter(isValidDateKey));
 
   // 条目随 props 一起交给页面：否则每个日期页都要把整个数据目录重扫一遍。
-  return [...withData].sort().map((dateKey) => ({
+  return [...withFile].sort().map((dateKey) => ({
     params: { date: dateKey },
     props: {
       dateKey,
       entry: byDate.get(dateKey) ?? null,
-      prevHasData: withData.has(addDays(dateKey, -1)),
-      nextHasData: withData.has(addDays(dateKey, 1)),
+      corrupt: corruptDates.has(dateKey),
+      prevHasData: withFile.has(addDays(dateKey, -1)),
+      nextHasData: withFile.has(addDays(dateKey, 1)),
     },
   }));
 }) satisfies GetStaticPaths;
 
-const { dateKey, entry, prevHasData, nextHasData } = Astro.props;
+const { dateKey, entry, corrupt, prevHasData, nextHasData } = Astro.props;
 
 // 「今天」的唯一依据：配置里的时区。绝不从本地时区或手写偏移推导。
 const today = todayInZone(siteConfig.site.timeZone);
@@ -50,6 +77,7 @@ const canonicalHref = dateKey === today ? withBase('/') : withBase(`/date/${date
   <DayView
     dateKey={dateKey}
     entry={entry}
+    corrupt={corrupt}
     prevHasData={prevHasData}
     nextHasData={nextHasData}
     todayKey={today}

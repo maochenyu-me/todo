@@ -7,16 +7,25 @@
  */
 import BaseLayout from '../layouts/BaseLayout.astro';
 import DayView from '../components/DayView.astro';
-import { readDayFromDisk } from '../lib/data';
+import { dayFileState, readDayFromDisk } from '../lib/data';
 import { addDays, todayInZone } from '../lib/date';
 import { siteConfig } from '../../site.config.ts';
 
 const { activeDir, archiveDir } = siteConfig.data;
 const today = todayInZone(siteConfig.site.timeZone);
 
+// `readDayFromDisk` 把「没有这一天」与「有文件读不出来」都收敛成 null，
+// 所以必须再问一次 dayFileState：否则一个坏文件会让首页谎称「今天还没有写下任何事」。
+const state = dayFileState(activeDir, archiveDir, today);
+if (state === 'corrupt') {
+  console.warn(`[今日页] ${today} 的记录文件存在但读不出来，页面将显示「读不出来」而不是「没有记录」。`);
+}
+
 const entry = readDayFromDisk(activeDir, archiveDir, today);
-const prevHasData = readDayFromDisk(activeDir, archiveDir, addDays(today, -1)) !== null;
-const nextHasData = readDayFromDisk(activeDir, archiveDir, addDays(today, 1)) !== null;
+
+// 相邻那天「有记录」既包括可读的一天，也包括坏文件——后者也有文件，点进去能看清明细。
+const prevHasData = dayFileState(activeDir, archiveDir, addDays(today, -1)) !== 'absent';
+const nextHasData = dayFileState(activeDir, archiveDir, addDays(today, 1)) !== 'absent';
 ---
 
 <!-- canonical 不需要在这里指定：`/` 是自己的规范地址，BaseLayout 按当前 pathname 拼即可。 -->
@@ -24,6 +33,7 @@ const nextHasData = readDayFromDisk(activeDir, archiveDir, addDays(today, 1)) !=
   <DayView
     dateKey={today}
     entry={entry}
+    corrupt={state === 'corrupt'}
     prevHasData={prevHasData}
     nextHasData={nextHasData}
     todayKey={today}

@@ -108,6 +108,54 @@ export function readDayFromDisk(activeDir: string, archiveDir: string, dateKey: 
   return null;
 }
 
+/** 某一天在磁盘上的三种状态：没有文件 / 有文件且可读 / 有文件但读不出来。 */
+export type DayFileState = 'absent' | 'ok' | 'corrupt';
+
+/**
+ * 判定某一天的文件状态，**只读，不写**。
+ *
+ * 存在的理由：`readDayFromDisk` 把「压根没有这一天」与「有文件但解析失败」都收敛成 `null`
+ * ——它的签名没有错误通道，这是既定契约。但页面必须把这两种情况显示成不同的话：
+ * 「今天还没有写下任何事」和「今天有记录但读不出来」是完全不同的两件事，
+ * 对着一个坏文件说前一句就是**撒谎**。本函数补上这个区分。
+ *
+ * 为什么不用「扫一遍 `loadAllEntries` 再按路径里有没有日期串去匹配」：那需要 O(全站文件)
+ * 的扫描，且目录级故障（`EACCES` 整个目录）的 `path` 里没有日期，匹配不上就会退化成
+ * 「没有这一天」。这里只探两个候选路径，结论精确、代价恒定。
+ *
+ * 落点顺序与 `readDayFromDisk` 一致（活跃区优先、损坏不回落归档区）：同一个日期上
+ * 「`readDayFromDisk` 返回 null」与「`dayFileState` 返回 `corrupt`」必然同时成立，
+ * 页面不会拿到互相矛盾的两种说法。
+ *
+ * 与 `readDayFromDisk` 的一处**有意差别**：文件存在但 `stat` 本身失败（`EACCES`……）
+ * 时这里报 `corrupt`。`readDayFromDisk` 把这种情况也当 `null`，是因为它没有错误通道；
+ * 而本函数存在的全部意义就是把「读不出来」说出来，读不了的文件绝对不能装成不存在。
+ */
+export function dayFileState(
+  activeDir: string,
+  archiveDir: string,
+  dateKey: string,
+): DayFileState {
+  const dirs = { activeDir, archiveDir };
+  const candidates = [
+    entryPath('active', dateKey, dirs),
+    entryPath('archive', dateKey, dirs),
+  ];
+  for (const path of candidates) {
+    const kind = kindOf(path);
+    // `dir`/`other` 不算「有这一天」：`loadAllEntries` 与 `readDayFromDisk` 也是这个口径
+    // （同名目录会被递归扫描，同名文件才算数据）。这不影响本函数的职责——
+    // 它区分的是「可读的文件 / 读不出的文件 / 没有文件」，不是「路径被什么占着」。
+    if (kind.status === 'missing' || kind.status === 'dir' || kind.status === 'other') continue;
+    // 到这一步文件确实在那儿（或至少 stat 说它在）。此后任何失败都是「坏了」而非「没有」。
+    if (kind.status === 'error') return 'corrupt';
+    const result = readEntryFile(path, dateKey);
+    if (result === 'missing') continue;
+    return 'entry' in result ? 'ok' : 'corrupt';
+  }
+  return 'absent';
+}
+
 /**
  * 递归收集目录下所有 `YYYY-MM-DD.json`，填入 `dateKey → 绝对路径`。
  *

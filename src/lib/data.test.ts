@@ -1,10 +1,10 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 
-import { loadAllEntries, readDayFromDisk } from './data';
+import { dayFileState, loadAllEntries, readDayFromDisk } from './data';
 import { entryPath, serializeEntry } from './entry-codec';
 import type { DayEntry } from './types';
 
@@ -236,5 +236,86 @@ describe('readDayFromDisk', () => {
     writeEntry('active', entry);
 
     expect(readDayFromDisk(activeDir, archiveDir, '2026-10-28')).toEqual(entry);
+  });
+});
+
+describe('dayFileState', () => {
+  test('文件存在且合法时为 ok', () => {
+    writeEntry('active', entryOf('2026-10-28'));
+
+    expect(dayFileState(activeDir, archiveDir, '2026-10-28')).toBe('ok');
+  });
+
+  test('归档区有文件且合法时也是 ok', () => {
+    writeEntry('archive', entryOf('2025-11-03'));
+
+    expect(dayFileState(activeDir, archiveDir, '2025-11-03')).toBe('ok');
+  });
+
+  test('两边都没有文件时为 absent（不是 corrupt）', () => {
+    expect(dayFileState(activeDir, archiveDir, '2026-01-01')).toBe('absent');
+  });
+
+  test('目录不存在时为 absent 而不抛异常', () => {
+    expect(dayFileState(join(root, 'nope'), join(root, 'nope2'), '2026-01-01')).toBe('absent');
+  });
+
+  test('JSON 语法错误时为 corrupt —— 这是本函数存在的理由：readDayFromDisk 在这里也返回 null', () => {
+    const path = writeEntry('active', entryOf('2026-10-29'));
+    writeFileSync(path, '{ broken', 'utf8');
+
+    // 同一份数据，两个函数给出**不同**的答案：一个有文件读不出，一个只是没文件。
+    expect(dayFileState(activeDir, archiveDir, '2026-10-29')).toBe('corrupt');
+    expect(readDayFromDisk(activeDir, archiveDir, '2026-10-29')).toBeNull();
+  });
+
+  test('内容不合法（date 与文件名不符）时为 corrupt', () => {
+    const path = writeEntry('active', entryOf('2026-10-29'));
+    writeFileSync(path, JSON.stringify({ date: '2026-10-27', tasks: [] }), 'utf8');
+
+    expect(dayFileState(activeDir, archiveDir, '2026-10-29')).toBe('corrupt');
+  });
+
+  test('任务缺必需字段时为 corrupt', () => {
+    writeFileSync(
+      join(activeDir, '2026-10-28.json'),
+      JSON.stringify({
+        date: '2026-10-28',
+        tasks: [{ id: 'a', title: '缺时间戳', done: false, priority: 1, tags: [], timeBlock: null }],
+      }),
+      'utf8',
+    );
+
+    expect(dayFileState(activeDir, archiveDir, '2026-10-28')).toBe('corrupt');
+  });
+
+  test('活跃区损坏时不回落到归档区：结论仍是 corrupt', () => {
+    const path = writeEntry('active', entryOf('2026-01-01', '活跃区版本'));
+    writeFileSync(path, '{ broken', 'utf8');
+    writeEntry('archive', entryOf('2026-01-01', '归档区版本'));
+
+    expect(dayFileState(activeDir, archiveDir, '2026-01-01')).toBe('corrupt');
+  });
+
+  test('活跃区没有文件时回落到归档区判定', () => {
+    writeEntry('archive', entryOf('2025-11-03'));
+
+    expect(dayFileState(activeDir, archiveDir, '2025-11-03')).toBe('ok');
+  });
+
+  test('有文件但 tasks 为空是 ok（空的正当记录，不是损坏）', () => {
+    writeEntry('active', { date: '2026-10-27', tasks: [] });
+
+    expect(dayFileState(activeDir, archiveDir, '2026-10-27')).toBe('ok');
+  });
+
+  test('不写入、不修改任何文件（只读）', () => {
+    const path = writeEntry('active', entryOf('2026-10-28'));
+    const before = readFileSync(path, 'utf8');
+
+    dayFileState(activeDir, archiveDir, '2026-10-28');
+    dayFileState(activeDir, archiveDir, '2026-01-01');
+
+    expect(readFileSync(path, 'utf8')).toBe(before);
   });
 });

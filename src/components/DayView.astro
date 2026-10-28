@@ -15,6 +15,7 @@ import ProgressTicks from './ProgressTicks.astro';
 import TaskRow from './TaskRow.astro';
 import { addDays, formatMedium } from '../lib/date';
 import { orderTasks } from '../lib/order';
+import { capTasks } from '../lib/paging';
 import { daySummary } from '../lib/stats';
 import type { DayEntry, Task } from '../lib/types';
 import { withBase } from '../lib/urls';
@@ -24,6 +25,14 @@ interface Props {
   dateKey: string;
   /** 该日没有文件时为 `null`；有文件但 `tasks` 为空是另一种「空」，两者都走空状态。 */
   entry: DayEntry | null;
+  /**
+   * 这一天**有文件但读不出来**（坏 JSON、内容不合法）。
+   *
+   * 必须与「没有这一天」分开渲染：`entry` 在两种情况下都是 `null`，若不加这个标记，
+   * 页面就会对着一个坏文件说「今天还没有写下任何事」——那是假话。
+   * 由页面用 `dayFileState()` 判定后传进来。
+   */
+  corrupt?: boolean;
   /** 相邻那天在磁盘上有没有记录——没有就置灰，不发死链。 */
   prevHasData: boolean;
   nextHasData: boolean;
@@ -31,7 +40,7 @@ interface Props {
   todayKey: string;
 }
 
-const { dateKey, entry, prevHasData, nextHasData, todayKey } = Astro.props;
+const { dateKey, entry, corrupt = false, prevHasData, nextHasData, todayKey } = Astro.props;
 
 const { showTimeBlock, showTags, showPriority, maxTasksPerPage } = siteConfig.frontend;
 
@@ -51,10 +60,9 @@ const readerOrder = [
   ...inReadingOrder(tasks.filter((task) => task.done)),
 ];
 
-// maxTasksPerPage 是护栏而不是排版目标：真超了就只渲染前 N 条，并如实报出还剩多少条。
-const cap = Math.max(0, maxTasksPerPage);
-const shown = readerOrder.slice(0, cap);
-const hiddenCount = readerOrder.length - shown.length;
+// maxTasksPerPage 是护栏而不是排版目标：超了就只渲染前 N 条，并如实报出还剩多少条。
+// 上限非正数/非有限值时 `capTasks` 视作「不限」并用 `cap: null` 表示，绝不会说出「（0 条）」。
+const { shown, hidden: hiddenCount, cap } = capTasks(readerOrder, maxTasksPerPage);
 const open = shown.filter((task) => !task.done);
 const done = shown.filter((task) => task.done);
 
@@ -70,20 +78,39 @@ function hrefOf(key: string): string {
 
 const emptyTitle = isToday ? '今天还没有写下任何事' : '这一天没有留下任何记录';
 const emptyHint = isToday ? '从三件小事开始，写完再一条条划掉。' : '空白的一天，也算如实记录。';
+
+/**
+ * 刻度的空态文案。`ProgressTicks` 的默认值是「今天还没有条目」，只对今天成立，
+ * 所以过去的日子必须换一句；读不出来的那天连条数都不知道，也不能说「没有条目」。
+ */
+const ticksEmptyLabel = corrupt
+  ? '记录读不出来，进度未知'
+  : isToday
+    ? undefined
+    : '这一天没有条目';
 ---
 
 <!-- 页首：印章 ＋ 刻度，全部左对齐。印章是页面上唯一倾斜的东西。 -->
 <header class="flex flex-wrap items-end gap-x-7 gap-y-5 pb-7">
   <DateStamp dateKey={dateKey} />
   <div class="pb-1.5">
-    <ProgressTicks total={summary.total} done={summary.done} />
+    <ProgressTicks total={summary.total} done={summary.done} emptyLabel={ticksEmptyLabel} />
   </div>
 </header>
 
 <section aria-labelledby="day-heading">
   <h2 id="day-heading" class="sr-only">{isToday ? '今天的待办' : '这一天的待办'}</h2>
 
-  {isEmpty ? <EmptyState title={emptyTitle} hint={emptyHint} /> : null}
+  {
+    corrupt ? (
+      <EmptyState
+        title={isToday ? '今天的记录在，但读不出来' : '这一天的记录在，但读不出来'}
+        hint="数据文件存在，但内容不合法或无法解析。修好那个文件后重新构建即可恢复。"
+      />
+    ) : null
+  }
+
+  {isEmpty && !corrupt ? <EmptyState title={emptyTitle} hint={emptyHint} /> : null}
 
   {
     open.length > 0 ? (
@@ -112,7 +139,7 @@ const emptyHint = isToday ? '从三件小事开始，写完再一条条划掉。
   }
 
   {
-    !isEmpty && open.length === 0 && hiddenCount === 0 ? (
+    !isEmpty && !corrupt && open.length === 0 && hiddenCount === 0 ? (
       <p class="text-[0.9375rem] text-muted-foreground">
         {isToday ? '今天的事项都划掉了。' : '这一天的事项都划掉了。'}
       </p>
@@ -126,6 +153,14 @@ const emptyHint = isToday ? '从三件小事开始，写完再一条条划掉。
           <span class="inline-block transition-transform group-open:rotate-90" aria-hidden="true">
             <ChevronRight size={13} stroke-width={2} />
           </span>
+          {/*
+            这里的数字与页首刻度**有意不同**，不要「修」成一致的：
+            页首的 ProgressTicks 报的是全天总数（summary.total / summary.done），
+            而这个折叠组只数真正渲染出来的那一段（受 maxTasksPerPage 约束）。
+            只有超过单页上限时两者才会分开，而那时「页首说 100/205、折叠组说 98」
+            恰恰是准确的——前者是全天的账，后者是这一页上划得掉的账。
+            若改成同一口径，短页好看，长页就会撒谎。
+          */}
           已完成 {done.length}
         </summary>
         <ul class="mt-2">
@@ -142,9 +177,9 @@ const emptyHint = isToday ? '从三件小事开始，写完再一条条划掉。
     ) : null
   }
 
-  {/* 超出单页上限时如实告知，不静默截断。 */}
+  {/* 超出单页上限时如实告知，不静默截断。`cap` 为 `null` 表示未设上限，此句不会出现。 */}
   {
-    hiddenCount > 0 ? (
+    hiddenCount > 0 && cap !== null ? (
       <p class="mt-7 text-[0.8125rem] text-muted-foreground">
         另有 {hiddenCount} 条超出单页显示上限（{cap} 条），此处未显示。
       </p>

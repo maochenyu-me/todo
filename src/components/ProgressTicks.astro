@@ -2,9 +2,16 @@
 interface Props {
   total: number;
   done: number;
+  /**
+   * `total === 0` 时显示的文案。默认为「今天还没有条目」，保持今天页的原有行为。
+   *
+   * 过去日期的页面必须传自己的说法（如「这一天没有条目」）——组件无从知道
+   * 自己画的是哪一天，把「今天」写死在组件里，过去的日子就会说错话。
+   */
+  emptyLabel?: string;
 }
 
-const { total, done } = Astro.props;
+const { total, done, emptyLabel = '今天还没有条目' } = Astro.props;
 
 // 越界的输入不炸页面：夹到 [0, total]
 const filled = Math.max(0, Math.min(done, total));
@@ -16,7 +23,7 @@ const filled = Math.max(0, Math.min(done, total));
 -->
 {
   total === 0 ? (
-    <p class="text-[0.8125rem] text-muted-foreground">今天还没有条目</p>
+    <p class="text-[0.8125rem] text-muted-foreground">{emptyLabel}</p>
   ) : (
     <div class="flex flex-col items-start gap-1.5">
       <ul class="flex flex-wrap gap-[3px]" aria-hidden="true">
