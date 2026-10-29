@@ -2,7 +2,7 @@ import { CheckCircle2, CloudOff, Loader2, Lock, PencilLine } from 'lucide-react'
 import * as React from 'react';
 
 import { todayInZone } from '@/lib/date';
-import { GitHubError } from '@/lib/github';
+import { GitHubError, type GitHubClient } from '@/lib/github';
 import { validateDay } from '@/lib/validate';
 import type { DayEntry } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -11,7 +11,11 @@ import { siteConfig } from '../../site.config.ts';
 import { DayList } from './components/DayList';
 import { StatusBar } from './components/StatusBar';
 import { activeClient } from './client-holder';
-import { buildCommitMessage, buildPublishPayload } from './publish';
+import {
+  buildCommitMessage,
+  buildPublishPayload,
+  type PublishPayload,
+} from './publish';
 import {
   adminReducer,
   hasUnsavedChanges,
@@ -193,7 +197,7 @@ function LoadedEditor({
     // 第三道闸：loadWarnings 的日期拒绝写入（覆盖读不出来的文件就是丢数据）。
     // buildPublishPayload 是纯函数，在这里同步跑完；抛错就停在 ready，不进 publishing。
     const todayKey = todayInZone(siteConfig.site.timeZone);
-    let payload;
+    let payload: PublishPayload;
     try {
       payload = buildPublishPayload({
         days: state.days,
@@ -211,7 +215,7 @@ function LoadedEditor({
       return;
     }
 
-    let client;
+    let client: GitHubClient;
     try {
       client = activeClient();
     } catch (caught) {

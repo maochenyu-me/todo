@@ -217,11 +217,12 @@ describe('buildCommitMessage', () => {
 describe('publish 链路的模块卫生', () => {
   const src = readFileSync('src/admin/publish.ts', 'utf8');
 
+  // 覆盖静态 import、动态 import() 与 require——浏览器包的守卫不能只盯一种语法。
   test('publish.ts 不引入 node 内置模块（会打进浏览器包）', () => {
-    expect(src).not.toMatch(/from ['"]node:/);
+    expect(src).not.toMatch(/(?:from\s*|import\s*\(\s*|require\s*\(\s*)['"]node:/);
   });
 
   test('publish.ts 不 import data.ts（那会把 node:fs 拖进浏览器包）', () => {
-    expect(src).not.toMatch(/from ['"].*\/data['"]/);
+    expect(src).not.toMatch(/(?:from\s*|import\s*\(\s*|require\s*\(\s*)['"][^'"]*\/data['"]/);
   });
 });
