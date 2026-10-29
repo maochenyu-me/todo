@@ -115,7 +115,7 @@ describe('adminReducer', () => {
       {
         type: 'TOKEN_OK',
         days: sampleDays(),
-        selected: DATE,
+        todayKey: DATE,
         tokenExpiresAt: '2027-01-01T00:00:00Z',
       },
     );
@@ -127,6 +127,53 @@ describe('adminReducer', () => {
     expect(s.dirty.size).toBe(0);
     expect(s.tokenExpiresAt).toBe('2027-01-01T00:00:00Z');
     expect(s.error).toBeUndefined();
+    // 全部载入成功 → 没有任何警告
+    expect(s.loadWarnings ?? []).toEqual([]);
+  });
+
+  test('TOKEN_OK 时 todayKey 那天没载入，就退到已载入的最新一天', () => {
+    // 仓库里今天那份文件存在却解析失败 → 它不在 days 里。此时绝不能把 selected
+    // 指到它上面：编辑器会把那份读不出来的真实文件当空白一天覆盖掉。
+    const earlier = '2026-10-27';
+    const s = adminReducer(
+      { status: 'disconnected', tokenExpiresAt: null },
+      {
+        type: 'TOKEN_OK',
+        days: { [earlier]: sampleEntry(earlier) },
+        todayKey: DATE, // 今天没载入
+        tokenExpiresAt: null,
+        loadWarnings: [{ date: DATE, message: `${DATE}：JSON 解析失败` }],
+      },
+    );
+    expect(s.status).toBe('ready');
+    if (s.status !== 'ready') throw new Error('unreachable');
+    expect(s.selected).toBe(earlier);
+    expect(Object.keys(s.days)).toContain(s.selected);
+  });
+
+  test('载入警告会一路带到 ready 与 publishing，只有 CLEAR_TOKEN 才丢', () => {
+    const warnings = [{ date: DATE, message: `${DATE}：读不出来` }];
+    const ready = adminReducer(
+      { status: 'disconnected', tokenExpiresAt: null },
+      { type: 'TOKEN_OK', days: sampleDays(), todayKey: DATE, tokenExpiresAt: null, loadWarnings: warnings },
+    );
+    expect(ready.status).toBe('ready');
+    if (ready.status !== 'ready') throw new Error('unreachable');
+    expect(ready.loadWarnings).toEqual(warnings);
+
+    const publishing = adminReducer(ready, { type: 'PUBLISH_START' });
+    expect(publishing.status).toBe('publishing');
+    if (publishing.status !== 'publishing') throw new Error('unreachable');
+    expect(publishing.loadWarnings).toEqual(warnings);
+
+    const failed = adminReducer(publishing, { type: 'PUBLISH_FAIL', message: '网络中断' });
+    expect(failed.status).toBe('ready');
+    if (failed.status !== 'ready') throw new Error('unreachable');
+    expect(failed.loadWarnings).toEqual(warnings);
+
+    const cleared = adminReducer(failed, { type: 'CLEAR_TOKEN' });
+    expect(cleared.status).toBe('disconnected');
+    expect('loadWarnings' in cleared).toBe(false);
   });
 
   test('PUBLISH_START 把 days / dirty / selected / tokenExpiresAt 一并带进 publishing', () => {
@@ -151,8 +198,7 @@ describe('adminReducer', () => {
     expect(done.error).toBeUndefined();
   });
 
-  test('SELECT_DAY 只改 selected，不碰 dirty', () => {
-    const before = readyState();
+  test('SELECT_DAY 只改 selected，不碰 dirty', () => {    const before = readyState();
     const other = '2026-10-27';
     const after = adminReducer(before, { type: 'SELECT_DAY', date: other });
     expect(after.status).toBe('ready');
@@ -222,7 +268,7 @@ describe('adminReducer', () => {
     const actions: AdminAction[] = [
       { type: 'UNLOCK_OK' },
       { type: 'UNLOCK_FAIL', message: 'x' },
-      { type: 'TOKEN_OK', days: sampleDays(), selected: DATE, tokenExpiresAt: null },
+      { type: 'TOKEN_OK', days: sampleDays(), todayKey: DATE, tokenExpiresAt: null },
       { type: 'TOKEN_FAIL', message: 'x' },
       { type: 'CLEAR_TOKEN' },
       { type: 'SELECT_DAY', date: DATE },
@@ -245,6 +291,13 @@ describe('adminReducer', () => {
           expect(next.selected, where).toBeTypeOf('string');
           // dirty 永远是 days 键的子集：标记了改动却没有那天数据 = 状态坏掉
           for (const key of next.dirty) expect(Object.keys(next.days), where).toContain(key);
+          // selected 必须真的在 days 里：指向一个没载入的日期，编辑器就会把
+          // 仓库里那份读不出来的文件当成空白一天覆盖掉。
+          expect(Object.keys(next.days), where).toContain(next.selected);
+          // 没载入的日期只能在 ready / publishing 上带着走；CLEAR_TOKEN 之后不该残留
+          if (next.status === 'ready' || next.status === 'publishing') {
+            expect(Array.isArray(next.loadWarnings ?? []), where).toBe(true);
+          }
         }
         // publishing 是"正在提交"，不该带错误（错误只会出现在 ready / disconnected / locked）
         if (next.status === 'publishing') expect('error' in next, where).toBe(false);

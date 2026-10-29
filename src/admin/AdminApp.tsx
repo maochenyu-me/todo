@@ -3,7 +3,6 @@ import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 
-import { Toaster } from './components/ui/sonner';
 import {
   adminReducer,
   hasUnsavedChanges,
@@ -49,25 +48,39 @@ const VIEW_LABEL: Record<View, string> = {
   publishing: '发布中',
 };
 
+/**
+ * 每个视图一个图标 —— 徽标（`StatusIcon`）和占位块（`PLACEHOLDER`）共用这一张表，
+ * 加视图时只有一处要改。
+ */
+const VIEW_ICON: Record<View, typeof Lock> = {
+  locked: Lock,
+  disconnected: CloudOff,
+  ready: CheckCircle2,
+  dirty: PencilLine,
+  publishing: Loader2,
+};
+
 /** `ready` / `dirty` / `publishing` 的占位文案。Task 15–16 会连同占位块一起替换。 */
-const PLACEHOLDER: Record<'ready' | 'dirty' | 'publishing', { icon: typeof Lock; title: string; body: string }> =
-  {
-    ready: {
-      icon: CheckCircle2,
-      title: '已连接仓库（编辑器占位）',
-      body: '数据已经从仓库读进来了。这里会显示当天的条目编辑器：新增、勾选、排序、加标签。由 Task 15 实现。',
-    },
-    dirty: {
-      icon: PencilLine,
-      title: '已连接 · 有未保存改动（编辑器占位）',
-      body: '编辑入口与「保存并发布」会在这里出现。由 Task 15、16 实现。',
-    },
-    publishing: {
-      icon: Loader2,
-      title: '发布中（占位）',
-      body: '这里会显示提交进度与失败重试；发布期间编辑入口锁住。由 Task 16 实现。',
-    },
-  };
+const PLACEHOLDER: Record<
+  'ready' | 'dirty' | 'publishing',
+  { icon: typeof Lock; title: string; body: string }
+> = {
+  ready: {
+    icon: VIEW_ICON.ready,
+    title: '已连接仓库（编辑器占位）',
+    body: '数据已经从仓库读进来了。这里会显示当天的条目编辑器：新增、勾选、排序、加标签。由 Task 15 实现。',
+  },
+  dirty: {
+    icon: VIEW_ICON.dirty,
+    title: '已连接 · 有未保存改动（编辑器占位）',
+    body: '编辑入口与「保存并发布」会在这里出现。由 Task 15、16 实现。',
+  },
+  publishing: {
+    icon: VIEW_ICON.publishing,
+    title: '发布中（占位）',
+    body: '这里会显示提交进度与失败重试；发布期间编辑入口锁住。由 Task 16 实现。',
+  },
+};
 
 export default function AdminApp({ siteTitle }: { siteTitle: string }) {
   const [state, dispatch] = React.useReducer(adminReducer, initialAdminState);
@@ -108,24 +121,13 @@ export default function AdminApp({ siteTitle }: { siteTitle: string }) {
       {state.status === 'ready' || state.status === 'publishing' ? (
         <LoadedPlaceholder state={state} view={view} />
       ) : null}
-
-      <Toaster position="bottom-right" />
     </div>
   );
 }
 
-/** 状态徽标的小图标；`dirty` 与 `publishing` 各有自己的图标。 */
+/** 状态徽标的小图标；取自 `VIEW_ICON`，与占位块共用同一张表。 */
 function StatusIcon({ view }: { view: View }) {
-  const Icon =
-    view === 'locked'
-      ? Lock
-      : view === 'disconnected'
-        ? CloudOff
-        : view === 'publishing'
-          ? Loader2
-          : view === 'dirty'
-            ? PencilLine
-            : CheckCircle2;
+  const Icon = VIEW_ICON[view];
   return <Icon className="size-3.5" strokeWidth={1.75} aria-hidden="true" />;
 }
 
@@ -147,6 +149,7 @@ function LoadedPlaceholder({
   // `publishing` 变体没有 `error` 字段（正在提交，错误由失败分支收尾）。
   const error = 'error' in state ? state.error : undefined;
   const days = Object.keys(state.days).length;
+  const loadWarnings = state.loadWarnings ?? [];
 
   return (
     <section
@@ -166,6 +169,22 @@ function LoadedPlaceholder({
         已从仓库读取 {days} 天数据，当前选中 {state.selected}
         {view === 'dirty' ? `，${state.dirty.size} 天有未保存改动` : ''}。
       </p>
+      {/*
+        仓库里存在、但这次没载入的日期必须说出来。少读了几天却只显示"读取了 N 天"，
+        用户会以为那就是全部——而仓库才是唯一真相。Task 16 的发布链路应当拒绝写入这些日期。
+      */}
+      {loadWarnings.length > 0 ? (
+        <div role="alert" className="flex flex-col gap-1">
+          <p className="text-[0.8125rem] font-medium text-seal">
+            有 {loadWarnings.length} 天没能载入，这些日期暂时不能编辑：
+          </p>
+          <ul className="flex flex-col gap-0.5 text-[0.8125rem] leading-relaxed text-muted-foreground">
+            {loadWarnings.map((warning) => (
+              <li key={warning.date}>{warning.message}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {error ? (
         <p role="alert" className="text-[0.8125rem] leading-relaxed text-seal">
           {error}

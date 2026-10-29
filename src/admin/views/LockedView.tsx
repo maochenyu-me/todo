@@ -115,7 +115,13 @@ export function LockedView({ state, dispatch }: LockedViewProps) {
       clearUnlockSession();
       return;
     }
-    if (!siteConfig.admin.requirePasswordOnRefresh) dispatch({ type: 'UNLOCK_OK' });
+    if (!siteConfig.admin.requirePasswordOnRefresh) {
+      dispatch({ type: 'UNLOCK_OK' });
+      return;
+    }
+    // 要求"每次刷新都重输"时，本机这条会话就是不该存在的东西：留着它只会让配置文件
+    // 的意图和实际状态对不上（下次改回 `false` 就会突然免密放行）。所以这里清掉。
+    clearUnlockSession();
   }, [configured, dispatch]);
 
   async function handleSubmit(event: React.SubmitEvent<HTMLFormElement>): Promise<void> {

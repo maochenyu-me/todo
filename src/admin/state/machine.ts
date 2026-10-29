@@ -28,6 +28,21 @@
  * 不靠 reducer 记得"此处不要清空"。`publishing` 里也完整带着 `days` / `dirty` / `selected`，
  * 正是为了让"提交失败"能原地恢复。
  *
+ * ## `selected` 只可能指向**真的载入过**的那一天
+ *
+ * 进 `ready` 时 `selected` 不是调用方传进来的，而是 `selectDay()` 从 `days` 的键里挑的
+ * （优先"今天"，否则已解析的最新一天）。这不是洁癖：仓库里某一天的文件**存在但解析失败**时，
+ * 它既不在 `days` 里、也不该被选中 —— 否则编辑器会把那一天当成"空白的新一天"，
+ * 发布时用一个空条目覆盖掉仓库里那份读不出来的真实文件。那是源数据上的静默丢失。
+ * 同理，一天都没读出来时**根本不进 `ready`**（空编辑器 + 一个虚构的 `selected` 只会更糟）。
+ *
+ * ## 没载入的那几天不会消失
+ *
+ * `ready` / `publishing` 上带 `loadWarnings`：仓库里存在、但这次没能载入的日期与原因。
+ * 它是数据源**不完整**的证据，必须活着穿过 `TOKEN_OK`、`PUBLISH_START`、`PUBLISH_FAIL`，
+ * 直到 `CLEAR_TOKEN` 才随数据一起丢弃。发布链路（Task 16）应当据此**拒绝**写入这些日期
+ * ——它们的内容还躺在仓库里没被读出来，覆盖就是丢数据。
+ *
  * ## 契约
  *
  * - **纯函数**：不修改入参，返回新对象（`days` / `dirty` 有变化时一定换新容器）。
@@ -37,6 +52,13 @@
  */
 
 import type { DayEntry } from '@/lib/types';
+
+/**
+ * 仓库里**存在**、但这次没能载入的一天。
+ *
+ * 与"这一天不存在"必须分开：不存在可以新建，存在却读不出来时覆盖就是丢数据。
+ */
+export type LoadWarning = { date: string; message: string };
 
 /** 后台的全部状态。注意 `disconnected` **没有** `days` 字段，这是刻意的。 */
 export type AdminState =
@@ -49,6 +71,8 @@ export type AdminState =
       dirty: Set<string>;
       tokenExpiresAt: string | null;
       error?: string;
+      /** 存在但没能载入的日期；`undefined` 与空数组同义（都表示"全都载入了"）。 */
+      loadWarnings?: LoadWarning[];
     }
   | {
       status: 'publishing';
@@ -56,6 +80,7 @@ export type AdminState =
       selected: string;
       dirty: Set<string>;
       tokenExpiresAt: string | null;
+      loadWarnings?: LoadWarning[];
     };
 
 /** 全部动作。字段即语义：`message` 一律是**给人看的中文**。 */
@@ -64,8 +89,20 @@ export type AdminAction =
   | { type: 'UNLOCK_OK' }
   /** 口令不对（或校验本身失败）。 */
   | { type: 'UNLOCK_FAIL'; message: string }
-  /** 令牌验证 + 首轮数据读取都成功；`days` 由调用方（`ConnectView`）从仓库读出来。 */
-  | { type: 'TOKEN_OK'; days: Record<string, DayEntry>; selected: string; tokenExpiresAt: string | null }
+  /**
+   * 令牌验证 + 首轮数据读取都成功；`days` 由调用方（`ConnectView`）从仓库读出来。
+   *
+   * **注意这里没有 `selected`**：选哪一天由 `selectDay()` 从 `days` 里派生，
+   * 调用方只能提供"希望优先选中哪天"（`todayKey`）。这样"选中的那天其实没载入"
+   * 就写不出来了。
+   */
+  | {
+      type: 'TOKEN_OK';
+      days: Record<string, DayEntry>;
+      todayKey: string;
+      tokenExpiresAt: string | null;
+      loadWarnings?: LoadWarning[];
+    }
   /** 令牌失效 / 网络故障 / 读取失败。停在 `ready`，改动不丢。 */
   | { type: 'TOKEN_FAIL'; message: string }
   /** 断开连接：令牌被清除，数据一并丢弃。 */
@@ -87,13 +124,40 @@ export const initialAdminState: AdminState = { status: 'locked' };
 /** `ready` / `publishing` 共有的那份数据（两者在数据上完全一致，只是能不能编辑不同）。 */
 type LoadedState = Extract<AdminState, { status: 'ready' | 'publishing' }>;
 
-function loaded(state: LoadedState): Pick<LoadedState, 'days' | 'selected' | 'dirty' | 'tokenExpiresAt'> {
+/**
+ * 把 `ready` / `publishing` 的数据原样搬过去（**同一个对象**，不是复制）。
+ *
+ * `loadWarnings` 也在这里搬：它证明"数据源不完整"，发布失败回到 `ready` 时必须还在，
+ * 否则用户会以为上次那几天的读取失败已经不存在了。
+ */
+function loaded(
+  state: LoadedState,
+): Pick<LoadedState, 'days' | 'selected' | 'dirty' | 'tokenExpiresAt' | 'loadWarnings'> {
   return {
     days: state.days,
     selected: state.selected,
     dirty: state.dirty,
     tokenExpiresAt: state.tokenExpiresAt,
+    loadWarnings: state.loadWarnings,
   };
+}
+
+/**
+ * 进 `ready` 时选哪一天：优先 `todayKey`，否则**已成功解析的**最新一天。
+ *
+ * 只在 `days` 的键里挑，所以返回值一定指向一份真实载入的数据 —— 仓库里那些
+ * "存在但解析失败"的日期不可能被选中。日期键是零填充的 `YYYY-MM-DD`，
+ * 所以字典序最大即时间最新。
+ */
+export function selectDay(days: Record<string, DayEntry>, todayKey: string): string {
+  if (days[todayKey] !== undefined) return todayKey;
+  const dates = Object.keys(days).sort();
+  return dates[dates.length - 1] ?? todayKey;
+}
+
+/** 读 `loadWarnings`（`undefined` 与空数组同义，都表示"全都载入了"）。 */
+export function loadWarningsOf(state: AdminState): LoadWarning[] {
+  return 'loadWarnings' in state ? (state.loadWarnings ?? []) : [];
 }
 
 /**
@@ -113,16 +177,28 @@ export function adminReducer(state: AdminState, action: AdminAction): AdminState
       // 只有停在 locked 上才谈得上"口令错"；别的状态收到它就是过时的异步结果，原样不动。
       return state.status === 'locked' ? { status: 'locked', error: action.message } : state;
 
-    case 'TOKEN_OK':
+    case 'TOKEN_OK': {
+      const parsedDates = Object.keys(action.days).sort();
+      if (parsedDates.length === 0) {
+        // 一天都没读出来：**不进 `ready`**。否则会得到一个"有编辑入口、但没有数据、
+        // 且 `selected` 指向一份读不出来的文件"的界面——那正是覆盖丢数据的入口。
+        // 调用方本应先发 `TOKEN_FAIL`；这里是最后一道防线。
+        return state.status === 'disconnected'
+          ? { ...state, error: '连上了仓库，但没有任何一天的数据文件被成功读取' }
+          : state;
+      }
       // 数据整批换成刚从仓库读回来的那一份，所以 `dirty` 归零：旧的改动标记指向的内容
       // 已经被远端内容替换掉了，留着只会让人以为有尚未发布的改动。
       return {
         status: 'ready',
         days: action.days,
-        selected: action.selected,
+        // 派生而不是接收：`selected` 一定是 `days` 里真实存在的键。
+        selected: selectDay(action.days, action.todayKey),
         dirty: new Set<string>(),
+        loadWarnings: action.loadWarnings ?? [],
         tokenExpiresAt: action.tokenExpiresAt,
       };
+    }
 
     case 'TOKEN_FAIL':
       if (state.status === 'ready') return { ...state, error: action.message };

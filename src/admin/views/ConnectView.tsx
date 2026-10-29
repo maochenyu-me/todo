@@ -247,9 +247,20 @@ export function ConnectView({ state, dispatch, createClient = createGitHubClient
         }
 
         setWarnings(failures);
-        const selected = days[todayKey] !== undefined ? todayKey : (dates[dates.length - 1] ?? todayKey);
         setToken('');
-        dispatch({ type: 'TOKEN_OK', days, selected, tokenExpiresAt: expiresAt });
+        // `selected` 由 reducer 从 `days` 派生（`todayKey` 只是"希望优先选中哪天"）：
+        // 选中的那天必须真的载入了，否则编辑器会把仓库里那份读不出来的文件当成空白一天覆盖掉。
+        // `failures` 也一并带上：它们在 `ready` 里必须继续可见，否则"少读了几天"会彻底静默。
+        dispatch({
+          type: 'TOKEN_OK',
+          days,
+          todayKey,
+          tokenExpiresAt: expiresAt,
+          loadWarnings: failures.map((message) => ({
+            date: message.slice(0, message.indexOf('：')),
+            message,
+          })),
+        });
       } catch (error) {
         // `listDataPaths()` 之类的失败（含目录树被截断、5xx、网络中断）。
         dispatch({ type: 'TOKEN_FAIL', message: scrubToken(readableFailure('读取仓库数据', error), candidate) });
