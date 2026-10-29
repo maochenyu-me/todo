@@ -1,15 +1,22 @@
 import { CheckCircle2, CloudOff, Loader2, Lock, PencilLine } from 'lucide-react';
 import * as React from 'react';
 
+import { validateDay } from '@/lib/validate';
+import type { DayEntry } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
+import { siteConfig } from '../../site.config.ts';
+import { DayList } from './components/DayList';
+import { StatusBar } from './components/StatusBar';
 import {
   adminReducer,
   hasUnsavedChanges,
   initialAdminState,
+  loadWarningsOf,
   type AdminState,
 } from './state/machine';
 import { ConnectView } from './views/ConnectView';
+import { EditorView } from './views/EditorView';
 import { LockedView } from './views/LockedView';
 import { deriveView, type View } from './view-state';
 
@@ -25,6 +32,16 @@ import { deriveView, type View } from './view-state';
  * `hasUnsavedChanges(state)` 再交给 `deriveView()` 折算成 `dirty` 视图。
  * 所以"未就绪却有未保存改动"这种组合没有地方可以写出来。
  *
+ * ## 编辑器的接线
+ *
+ * `EditorView` 的每个操作都调 `operations.ts` 的纯函数拿到「新的一天」，再经
+ * `patchDay` 分派 `PATCH_DAY` 落回 reducer——本文件**不持有任何编辑副本**，
+ * reducer 的 `days` 就是编辑器画面的唯一来源。
+ *
+ * 发布闸门：`dirty` 里每一天都要过 `validateDay()`，有不过的就把「保存并发布」
+ * 挡住并列出原因（坏数据一旦发布，公开页面就得吃下它）。真实发布链路
+ * （`PUBLISH_START` → commit → `PUBLISH_OK`/`FAIL`）由 Task 16 接线。
+ *
  * ## 数据为什么不可能从构建产物里漏出来
  *
  * `disconnected` 这个状态变体里**没有 `days` 字段**。数据唯一来源是 `ConnectView`
@@ -33,11 +50,7 @@ import { deriveView, type View } from './view-state';
  *
  * ## 还剩下的占位块
  *
- * - Task 15 → `ready` / `dirty` 换成条目编辑器（`EditorView` + 状态栏）
- * - Task 16 → `publishing` 换成提交进度
- *
- * Task 12 的「临时调试条」与「技术栈自检」面板本任务已删除：真实状态机接线后，
- * 再提供一个"手动跳到 ready"的按钮只会制造一个没有数据却有编辑入口的假状态。
+ * - Task 16 → `publishing` 换成提交进度，`onPublish` 接上真实发布链路。
  */
 
 const VIEW_LABEL: Record<View, string> = {
@@ -48,10 +61,7 @@ const VIEW_LABEL: Record<View, string> = {
   publishing: '发布中',
 };
 
-/**
- * 每个视图一个图标 —— 徽标（`StatusIcon`）和占位块（`PLACEHOLDER`）共用这一张表，
- * 加视图时只有一处要改。
- */
+/** 每个视图一个图标——徽标（`StatusIcon`）共用这一张表，加视图时只有一处要改。 */
 const VIEW_ICON: Record<View, typeof Lock> = {
   locked: Lock,
   disconnected: CloudOff,
@@ -60,27 +70,15 @@ const VIEW_ICON: Record<View, typeof Lock> = {
   publishing: Loader2,
 };
 
-/** `ready` / `dirty` / `publishing` 的占位文案。Task 15–16 会连同占位块一起替换。 */
-const PLACEHOLDER: Record<
-  'ready' | 'dirty' | 'publishing',
-  { icon: typeof Lock; title: string; body: string }
-> = {
-  ready: {
-    icon: VIEW_ICON.ready,
-    title: '已连接仓库（编辑器占位）',
-    body: '数据已经从仓库读进来了。这里会显示当天的条目编辑器：新增、勾选、排序、加标签。由 Task 15 实现。',
-  },
-  dirty: {
-    icon: VIEW_ICON.dirty,
-    title: '已连接 · 有未保存改动（编辑器占位）',
-    body: '编辑入口与「保存并发布」会在这里出现。由 Task 15、16 实现。',
-  },
-  publishing: {
-    icon: VIEW_ICON.publishing,
-    title: '发布中（占位）',
-    body: '这里会显示提交进度与失败重试；发布期间编辑入口锁住。由 Task 16 实现。',
-  },
-};
+/** 校验不过的日期（`dirty` 的子集）：发布闸门的依据。 */
+function invalidDaysOf(state: Extract<AdminState, { status: 'ready' | 'publishing' }>): string[] {
+  const invalid: string[] = [];
+  for (const date of state.dirty) {
+    const entry = state.days[date];
+    if (entry !== undefined && validateDay(entry).length > 0) invalid.push(date);
+  }
+  return invalid;
+}
 
 export default function AdminApp({ siteTitle }: { siteTitle: string }) {
   const [state, dispatch] = React.useReducer(adminReducer, initialAdminState);
@@ -88,6 +86,15 @@ export default function AdminApp({ siteTitle }: { siteTitle: string }) {
   const dirty = hasUnsavedChanges(state);
   const view: View = deriveView(state.status, dirty);
   const publishing = state.status === 'publishing';
+
+  const patchDay = React.useCallback(
+    (day: DayEntry) => dispatch({ type: 'PATCH_DAY', day }),
+    [dispatch],
+  );
+  const selectDay = React.useCallback(
+    (date: string) => dispatch({ type: 'SELECT_DAY', date }),
+    [dispatch],
+  );
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[64rem] flex-col gap-6 px-5 pt-8 pb-16 sm:px-8">
@@ -119,56 +126,63 @@ export default function AdminApp({ siteTitle }: { siteTitle: string }) {
       {state.status === 'locked' ? <LockedView state={state} dispatch={dispatch} /> : null}
       {state.status === 'disconnected' ? <ConnectView state={state} dispatch={dispatch} /> : null}
       {state.status === 'ready' || state.status === 'publishing' ? (
-        <LoadedPlaceholder state={state} view={view} />
+        <LoadedEditor
+          state={state}
+          publishing={publishing}
+          patchDay={patchDay}
+          selectDay={selectDay}
+        />
       ) : null}
     </div>
   );
 }
 
-/** 状态徽标的小图标；取自 `VIEW_ICON`，与占位块共用同一张表。 */
+/** 状态徽标的小图标；取自 `VIEW_ICON`。 */
 function StatusIcon({ view }: { view: View }) {
   const Icon = VIEW_ICON[view];
   return <Icon className="size-3.5" strokeWidth={1.75} aria-hidden="true" />;
 }
 
 /**
- * `ready` / `dirty` / `publishing` 的占位块（Task 15–16 替换）。
+ * `ready` / `publishing` 的编辑器：状态栏 + 日期列表 + 当天条目。
  *
- * 顺带把 `state.error` 显示出来：`TOKEN_FAIL` / `PUBLISH_FAIL` 按设计都停留在
- * `ready` 并只额外挂一条错误，如果这里不显示，那条错误就成了看不见的状态。
+ * 顺带把两类「必须让人看见的隐患」显示出来：`loadWarnings`（仓库里存在、
+ * 这次却没能载入的日期）与 `state.error`（`TOKEN_FAIL` / `PUBLISH_FAIL` 按设计
+ * 都停留在 `ready` 并只挂一条错误——不显示它就成了看不见的状态）。
  */
-function LoadedPlaceholder({
+function LoadedEditor({
   state,
-  view,
+  publishing,
+  patchDay,
+  selectDay,
 }: {
   state: Extract<AdminState, { status: 'ready' | 'publishing' }>;
-  view: View;
+  publishing: boolean;
+  patchDay: (day: DayEntry) => void;
+  selectDay: (date: string) => void;
 }) {
-  const { icon: ViewIcon, title, body } =
-    PLACEHOLDER[view === 'dirty' || view === 'publishing' ? view : 'ready'];
-  // `publishing` 变体没有 `error` 字段（正在提交，错误由失败分支收尾）。
+  const repoLabel = (() => {
+    const { owner, repo, branch } = siteConfig.admin.github;
+    return `${owner}/${repo}@${branch}`;
+  })();
+
+  const invalidDays = invalidDaysOf(state);
+  const loadWarnings = loadWarningsOf(state);
   const error = 'error' in state ? state.error : undefined;
-  const days = Object.keys(state.days).length;
-  const loadWarnings = state.loadWarnings ?? [];
 
   return (
-    <section
-      aria-labelledby="admin-view-title"
-      className="flex flex-col items-start gap-3 rounded-[var(--radius)] border border-border bg-card px-5 py-6"
-    >
-      <h2 id="admin-view-title" className="flex items-center gap-2 text-[1.0625rem] font-semibold">
-        <ViewIcon
-          className={cn('size-4 text-muted-foreground', view === 'publishing' && 'animate-spin')}
-          strokeWidth={1.75}
-          aria-hidden="true"
-        />
-        {title}
-      </h2>
-      <p className="max-w-[42rem] text-[0.9375rem] leading-relaxed text-muted-foreground">{body}</p>
-      <p className="text-[0.8125rem] text-muted-foreground">
-        已从仓库读取 {days} 天数据，当前选中 {state.selected}
-        {view === 'dirty' ? `，${state.dirty.size} 天有未保存改动` : ''}。
-      </p>
+    <div className="flex flex-col gap-4">
+      <StatusBar
+        repoLabel={repoLabel}
+        tokenExpiresAt={state.tokenExpiresAt}
+        dirtyCount={state.dirty.size}
+        errorCount={invalidDays.length}
+        publishing={publishing}
+        onPublish={() => {
+          // Task 16 接线：PUBLISH_START → GitHub commit → PUBLISH_OK / PUBLISH_FAIL。
+        }}
+      />
+
       {/*
         仓库里存在、但这次没载入的日期必须说出来。少读了几天却只显示"读取了 N 天"，
         用户会以为那就是全部——而仓库才是唯一真相。Task 16 的发布链路应当拒绝写入这些日期。
@@ -185,11 +199,27 @@ function LoadedPlaceholder({
           </ul>
         </div>
       ) : null}
+
       {error ? (
         <p role="alert" className="text-[0.8125rem] leading-relaxed text-seal">
           {error}
         </p>
       ) : null}
-    </section>
+
+      <div className="grid min-w-0 grid-cols-1 items-start gap-4 md:grid-cols-[13rem_minmax(0,1fr)]">
+        <DayList
+          days={state.days}
+          selected={state.selected}
+          dirty={state.dirty}
+          onSelect={selectDay}
+          disabled={publishing}
+        />
+        <EditorView
+          entry={state.days[state.selected]}
+          publishing={publishing}
+          patchDay={patchDay}
+        />
+      </div>
+    </div>
   );
 }
