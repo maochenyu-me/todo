@@ -36,7 +36,7 @@ const items = NAV_ITEMS.filter((item) => pages[item.key]);
 -->
 <header class="lg:sticky lg:top-0 lg:z-40 lg:h-dvh lg:w-60 lg:shrink-0 lg:bg-card">
   <div
-    class="flex flex-wrap items-center px-5 pt-3 sm:px-8 lg:h-full lg:flex-col lg:flex-nowrap lg:items-stretch lg:px-6 lg:pt-10 lg:pb-8"
+    class="flex flex-wrap items-center px-5 pt-3 sm:px-8 lg:h-full lg:flex-col lg:flex-nowrap lg:items-stretch lg:px-6 lg:pt-8 lg:pb-6"
   >
     <a
       href={withBase('/')}
@@ -51,7 +51,7 @@ const items = NAV_ITEMS.filter((item) => pages[item.key]);
 
     <ThemeToggle />
 
-    <nav aria-label="主导航" class="order-3 w-full lg:mt-8 lg:w-auto">
+    <nav aria-label="主导航" class="order-3 w-full lg:mt-6 lg:w-auto">
       <ul class="flex w-full lg:flex-col lg:gap-0.5">
         {
           items.map(({ key, label, href, Icon }) => {

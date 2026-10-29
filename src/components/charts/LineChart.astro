@@ -157,24 +157,30 @@ const ariaLabel =
         读屏拿到的必须是数字：`role="img"` 的图形不朗读内部文本，所以每个点的
         读数逐条列在这张对视力读者隐藏的表里。百分比按 0..1 的比例换算，
         不保留小数——图上读不出 1% 以下的差别，表格里也不必假装读得出。
+
+        `sr-only` 挂在 div 上而不是表上：表格布局把 `height: 1px` 当 min-height
+        对待，90 个点的表会撑回两千多像素，绝对定位后把文档滚动区拉出一大段
+        空白（与 `BarSquares` 同一个坑，见那边的完整说明）。
       */}
-      <table class="sr-only">
-        <caption>图表数值：{plan.samples.length} 个点的完成率</caption>
-        <thead>
-          <tr>
-            <th scope="col">日期</th>
-            <th scope="col">完成率</th>
-          </tr>
-        </thead>
-        <tbody>
-          {plan.samples.map((sample) => (
+      <div class="sr-only">
+        <table>
+          <caption>图表数值：{plan.samples.length} 个点的完成率</caption>
+          <thead>
             <tr>
-              <th scope="row">{sample.x}</th>
-              <td>{Math.round(sample.y * 100)}%</td>
+              <th scope="col">日期</th>
+              <th scope="col">完成率</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {plan.samples.map((sample) => (
+              <tr>
+                <th scope="row">{sample.x}</th>
+                <td>{Math.round(sample.y * 100)}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

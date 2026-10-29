@@ -183,7 +183,7 @@ const CHART_NOTE_CLASS = 'mt-2 text-[0.8125rem] text-muted-foreground';
     图表行宽（`CHART_MEASURE`）。分隔线（`border-t`）画在 `<section>` 上，
     所以四条线的宽度一致、都到图表列右端——线不等长比线长短更刺眼。
   */}
-  <header class={`pb-7 ${PROSE_MEASURE}`}>
+  <header class={`pb-5 ${PROSE_MEASURE}`}>
     <h1 class="text-[1.375rem] font-semibold tracking-[-0.01em] text-foreground">统计</h1>
     <p class="mt-1.5 text-[0.8125rem] text-muted-foreground">
       只数完成情况：划掉了多少、连着多少天、最近几周的走势。不列出事项本身。
@@ -195,7 +195,7 @@ const CHART_NOTE_CLASS = 'mt-2 text-[0.8125rem] text-muted-foreground';
 
   {
     showCompletionRate ? (
-      <section aria-labelledby="rate-heading" class="border-t border-border py-6">
+      <section aria-labelledby="rate-heading" class="border-t border-border py-5">
         <div class={PROSE_MEASURE}>
           <h2 id="rate-heading" class={SECTION_HEADING_CLASS}>总完成率</h2>
 
@@ -221,7 +221,7 @@ const CHART_NOTE_CLASS = 'mt-2 text-[0.8125rem] text-muted-foreground';
 
   {
     showStreak ? (
-      <section aria-labelledby="streak-heading" class="border-t border-border py-6">
+      <section aria-labelledby="streak-heading" class="border-t border-border py-5">
         <div class={PROSE_MEASURE}>
           <h2 id="streak-heading" class={SECTION_HEADING_CLASS}>连续打卡</h2>
 
@@ -264,7 +264,7 @@ const CHART_NOTE_CLASS = 'mt-2 text-[0.8125rem] text-muted-foreground';
   */}
   {
     showTrend ? (
-      <section aria-labelledby="weekly-heading" class="border-t border-border py-6">
+      <section aria-labelledby="weekly-heading" class="border-t border-border py-5">
         <div class={PROSE_MEASURE}>
           <h2 id="weekly-heading" class={SECTION_HEADING_CLASS}>近 12 周每周完成数</h2>
         </div>
@@ -287,7 +287,7 @@ const CHART_NOTE_CLASS = 'mt-2 text-[0.8125rem] text-muted-foreground';
 
   {
     showTrend ? (
-      <section aria-labelledby="trend-heading" class="border-t border-border py-6">
+      <section aria-labelledby="trend-heading" class="border-t border-border py-5">
         <div class={PROSE_MEASURE}>
           <h2 id="trend-heading" class={SECTION_HEADING_CLASS}>近 90 天每天完成率</h2>
         </div>

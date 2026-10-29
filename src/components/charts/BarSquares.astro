@@ -177,34 +177,42 @@ const ariaLabel = [
         平时对视力读者隐藏（柱子的形状已经说明了问题，再列一遍是重复）；
         但柱子被封顶时**改成可见**——那一刻图形已经不能说清「到底多少」，
         数字必须自己站出来。两种情况下读屏拿到的内容完全一样。
-      */}
-      <table class={plan.clipped ? 'mt-3 w-full text-[0.8125rem] tabular-nums' : 'sr-only'}>
-        <caption
-          class:list={[plan.clipped ? 'mb-1 text-left text-[0.75rem] text-muted-foreground' : null]}
-        >
-          图表数值：共 {plan.rows.length} 项，最高 {plan.peak}
-          {plan.clipped ? `；柱子最多画 ${plan.drawRows} 格，更高的柱子柱顶标了真实数` : ''}
-        </caption>
 
-        <thead class:list={[plan.clipped ? 'text-[0.75rem] text-muted-foreground' : null]}>
-          <tr>
-            <th scope="col" class:list={[plan.clipped ? 'py-1 text-left font-normal' : null]}>项</th>
-            <th scope="col" class:list={[plan.clipped ? 'py-1 text-right font-normal' : null]}>
-              数值
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {plan.rows.map((row) => (
-            <tr class:list={[plan.clipped ? 'border-t border-border/70' : null]}>
-              <th scope="row" class:list={[plan.clipped ? 'py-1 text-left font-normal' : null]}>
-                {row.label}
+        `sr-only` 必须挂在外层 div 上而不是表上：表格布局把 `height: 1px`
+        当 **min-height** 对待，表会撑回全部内容的高度——绝对定位的这张
+        两千多像素高的表把文档滚动区拉出一大段「往下全是空白」（实测
+        scrollHeight 3338px，正文只有 1061px）。div 才会真的被 1px + overflow
+        裁掉，对滚动区零贡献。
+      */}
+      <div class={plan.clipped ? 'mt-3' : 'sr-only'}>
+        <table class="w-full text-[0.8125rem] tabular-nums">
+          <caption
+            class:list={[plan.clipped ? 'mb-1 text-left text-[0.75rem] text-muted-foreground' : null]}
+          >
+            图表数值：共 {plan.rows.length} 项，最高 {plan.peak}
+            {plan.clipped ? `；柱子最多画 ${plan.drawRows} 格，更高的柱子柱顶标了真实数` : ''}
+          </caption>
+
+          <thead class:list={[plan.clipped ? 'text-[0.75rem] text-muted-foreground' : null]}>
+            <tr>
+              <th scope="col" class:list={[plan.clipped ? 'py-1 text-left font-normal' : null]}>项</th>
+              <th scope="col" class:list={[plan.clipped ? 'py-1 text-right font-normal' : null]}>
+                数值
               </th>
-              <td class:list={[plan.clipped ? 'py-1 text-right' : null]}>{row.value}</td>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {plan.rows.map((row) => (
+              <tr class:list={[plan.clipped ? 'border-t border-border/70' : null]}>
+                <th scope="row" class:list={[plan.clipped ? 'py-1 text-left font-normal' : null]}>
+                  {row.label}
+                </th>
+                <td class:list={[plan.clipped ? 'py-1 text-right' : null]}>{row.value}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

@@ -130,10 +130,15 @@ function dayHref(dateKey: string): string {
   }
 
   <div class="border-t border-border pt-3">
+    {/*
+      表头与日期格子必须落在同一条竖线上：格子里的数字是左对齐（`px-1.5` 起），
+      表头若用 `text-center`，「一」会悬在格子中央而数字贴左——两条基准线。
+      这里用与格子完全相同的内边距，字从同一条竖线起笔。
+    */}
     <ul class="grid grid-cols-7 gap-x-1 pb-1" aria-hidden="true">
       {
         weekLabels.map((label) => (
-          <li class="text-center text-[0.75rem] text-muted-foreground">{label}</li>
+          <li class="px-1.5 text-left text-[0.75rem] text-muted-foreground">{label}</li>
         ))
       }
     </ul>
