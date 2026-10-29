@@ -519,6 +519,86 @@ describe('commitChanges：原子提交的调用序列', () => {
 
     expect(calls).toHaveLength(0);
   });
+
+  test('删除列表内部重复也直接报错，不发任何请求', async () => {
+    // 漏掉这一步时，两条一样的 tree 条目会被 GitHub 以 422 拒绝，
+    // 而 422 的文案是"分支已被更新，请刷新后重试"——会把人骗进无限重试。
+    const { client, calls } = fakeGitHub();
+    const twice = await caught(
+      client.commitChanges({ writes: [], deletes: [write(1).path, write(1).path], ...COMMIT_INPUT }),
+    );
+    expect(twice).toBeInstanceOf(GitHubError);
+    expect((twice as GitHubError).message).toMatch(/删除了两次/);
+    expect(calls).toHaveLength(0);
+  });
+
+  test('目录路径不能被当成文件写入或删除', async () => {
+    // 只校验"在仓库里"时，`src/data/todos` 这种目录路径也是合法的；
+    // 把它当写入目标，一次提交就会把整个 todos/ 子树替换成一个 blob。
+    const { client, calls } = fakeGitHub();
+    for (const dir of ['src/data/todos', 'src/data/archive', 'src/data']) {
+      const asWrite = await caught(
+        client.commitChanges({ writes: [{ path: dir, content: 'x' }], deletes: [], ...COMMIT_INPUT }),
+      );
+      expect(asWrite).toBeInstanceOf(GitHubError);
+      expect((asWrite as GitHubError).message).toMatch(/只允许改动每日数据文件/);
+
+      const asDelete = await caught(
+        client.commitChanges({ writes: [], deletes: [dir], ...COMMIT_INPUT }),
+      );
+      expect(asDelete).toBeInstanceOf(GitHubError);
+      expect((asDelete as GitHubError).message).toMatch(/只允许改动每日数据文件/);
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  test('数据目录之外的文件路径也被拒绝', async () => {
+    const { client, calls } = fakeGitHub();
+    for (const path of ['README.md', 'src/pages/index.astro', 'package.json']) {
+      const res = await caught(
+        client.commitChanges({ writes: [{ path, content: 'x' }], deletes: [], ...COMMIT_INPUT }),
+      );
+      expect(res).toBeInstanceOf(GitHubError);
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  test('归档搬迁（写归档路径 + 删活跃路径）是合法的', async () => {
+    const { client, calls } = fakeGitHub();
+    await client.commitChanges({
+      writes: [{ path: 'src/data/archive/2026/2026-03-01.json', content: '{}' }],
+      deletes: ['src/data/todos/2026-03-01.json'],
+      ...COMMIT_INPUT,
+    });
+    // 合法搬迁必须真的发出去，没有被路径校验误杀。
+    expect(calls.some((c) => c.path === '/git/trees')).toBe(true);
+    expect(calls.filter((c) => c.method === 'PATCH')).toHaveLength(1);
+  });
+
+  test('形如数据文件但日期不可能存在的路径被拒绝', async () => {
+    const { client, calls } = fakeGitHub();
+    for (const path of ['src/data/todos/2026-13-01.json', 'src/data/todos/2026-02-31.json']) {
+      const res = await caught(
+        client.commitChanges({ writes: [{ path, content: 'x' }], deletes: [], ...COMMIT_INPUT }),
+      );
+      expect(res).toBeInstanceOf(GitHubError);
+      expect((res as GitHubError).message).toMatch(/不是真实存在的日期/);
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  test('写入/删除列表不是数组时报 GitHubError 而不是 TypeError', async () => {
+    const { client, calls } = fakeGitHub();
+    const bad = await caught(
+      client.commitChanges({
+        writes: 'nope',
+        deletes: [],
+        ...COMMIT_INPUT,
+      } as unknown as Parameters<typeof client.commitChanges>[0]),
+    );
+    expect(bad).toBeInstanceOf(GitHubError);
+    expect(calls).toHaveLength(0);
+  });
 });
 
 describe('commitChanges：base64 编码', () => {
@@ -601,7 +681,17 @@ describe('commitChanges：失败与重试', () => {
     expect((error as GitHubError).status).toBe(500);
     expect(calls.filter((c) => c.method === 'PATCH')).toHaveLength(0);
     expect(calls.filter((c) => c.path === '/git/trees')).toHaveLength(0);
-    expect(calls.filter((c) => c.path === '/git/commits')).toHaveLength(0);
+    // token 只能出现在 Authorization 头里，绝不能漏进错误文案
+    expect((error as GitHubError).message).not.toContain(TOKEN);
+  });
+
+  test('PATCH 失败时错误文案里也不含 token', async () => {
+    const { client } = fakeGitHub({ heads: ['h0', 'h1', 'h2'], patchStatuses: [422, 422, 422] });
+    const error = await caught(
+      client.commitChanges({ writes: [write(1)], deletes: [], ...COMMIT_INPUT }),
+    );
+    expect(error).toBeInstanceOf(GitHubError);
+    expect((error as GitHubError).message).not.toContain(TOKEN);
   });
 
   test('blob 上传 401 时报文可读且不泄露令牌', async () => {

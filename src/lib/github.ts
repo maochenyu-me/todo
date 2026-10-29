@@ -20,6 +20,7 @@
  */
 
 import { base64ToBytes, bytesToBase64 } from './auth';
+import { isValidDateKey } from './date';
 import { siteConfig } from '../../site.config.ts';
 
 /** 数据文件所在目录（仓库相对路径），唯一真相是 `site.config.ts`。 */
@@ -128,10 +129,20 @@ const ARCHIVE_PATH_RE = new RegExp(
 );
 
 /**
- * 仓库路径安全校验：拒绝绝对路径、反斜杠、空段、`.` 与 `..`。
+ * 仓库路径安全校验：必须是**数据文件**的合法路径，而不只是"在仓库里"。
  *
- * 后台算出来的路径理论上总是 `entryPath()` 的产物，但这里是"能改坏真实仓库"的最后一道闸：
- * 一个 `../` 就能把提交写到数据目录之外，宁可在发请求前就炸掉。
+ * 后台算出来的路径理论上总是 `entryPath()` 的产物，但这里是"能改坏真实仓库"的最后一道闸。
+ * 两道关：
+ *
+ * 1. 拒绝绝对路径、反斜杠、空段、`.` 与 `..`——一个 `../` 就能把提交写到数据目录之外。
+ * 2. 必须匹配活跃区或归档区的目标模式。
+ *
+ * 第 2 条不是洁癖：`assertRepoPath` 只做第 1 条时，`src/data/todos` 这种**目录**路径也算合法。
+ * 而 tree 里一个路径要么是文件要么是目录——把目录路径当成写入目标，会把整个子树替换成
+ * 一个 blob，一次提交删光该目录下的所有数据；当成删除目标则整棵子树消失。一次误传就够。
+ * 目录名与文件名在这里无法从字符串形态区分，所以只能强制"必须是某一天的数据文件"。
+ *
+ * 归档搬迁（写 `<archiveDir>/YYYY/…json`、删 `<activeDir>/…json`）两条都匹配，不受影响。
  */
 function assertRepoPath(path: unknown): string {
   if (typeof path !== 'string' || path.trim() === '') {
@@ -144,6 +155,18 @@ function assertRepoPath(path: unknown): string {
     segments.some((segment) => segment === '' || segment === '.' || segment === '..');
   if (illegal) {
     throw new GitHubError(`仓库路径不合法：${path}（必须以仓库根目录为基准，不能含 . 或 ..）`);
+  }
+  if (!ACTIVE_PATH_RE.test(path) && !ARCHIVE_PATH_RE.test(path)) {
+    throw new GitHubError(
+      `仓库路径不合法：${path}（只允许改动每日数据文件：` +
+        `${ACTIVE_DIR}/YYYY-MM-DD.json 或 ${ARCHIVE_DIR}/YYYY/YYYY-MM-DD.json）`,
+    );
+  }
+  // 形状对不代表日期真实：`2026-02-31.json` 能过上面的正则，却不可能是 `entryPath()`
+  // 的产物。写进去就是往数据目录里塞一个永远不会被渲染的垃圾文件。
+  const dateKey = path.slice(path.lastIndexOf('/') + 1, -'.json'.length);
+  if (!isValidDateKey(dateKey)) {
+    throw new GitHubError(`仓库路径不合法：${path}（${dateKey} 不是真实存在的日期）`);
   }
   return path;
 }
@@ -457,6 +480,12 @@ export function createGitHubClient(cfg: GitHubConfig): GitHubClient {
 
   async function commitChanges(input: CommitInput): Promise<CommitResult> {
     // 先做全部本地校验：校验放在任何请求之前，错配置就不会留下孤立 blob。
+    if (!Array.isArray(input.writes) && input.writes !== undefined) {
+      throw new GitHubError('写入列表必须是数组');
+    }
+    if (!Array.isArray(input.deletes) && input.deletes !== undefined) {
+      throw new GitHubError('删除列表必须是数组');
+    }
     const writes = (input.writes ?? []).map((write) => {
       if (typeof write.content !== 'string') {
         throw new GitHubError(`写入项 ${String(write.path)} 的内容必须是字符串`);
@@ -486,7 +515,13 @@ export function createGitHubClient(cfg: GitHubConfig): GitHubClient {
       if (writePaths.has(write.path)) throw new GitHubError(`同一个文件被写入了两次：${write.path}`);
       writePaths.add(write.path);
     }
+    // 删除列表内部也要去重：漏了这一步，`deletes: ['a','a']` 会发出两条一样的 tree 条目，
+    // GitHub 回 422，而我们的 422 文案是"分支已被更新，请刷新后重试"——一个会把人带进
+    // 无限重试的错误诊断。重复是调用方的 bug，就在这里说清楚。
+    const deletePaths = new Set<string>();
     for (const path of deletes) {
+      if (deletePaths.has(path)) throw new GitHubError(`同一个文件被删除了两次：${path}`);
+      deletePaths.add(path);
       if (writePaths.has(path)) {
         throw new GitHubError(`同一个文件不能既写入又删除：${path}`);
       }
