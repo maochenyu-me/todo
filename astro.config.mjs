@@ -11,5 +11,10 @@ export default defineConfig({
   base: siteConfig.site.basePath,
   trailingSlash: 'ignore',
   vite: { plugins: [tailwindcss()] },
-  integrations: [react(), sitemap()],
+  integrations: [
+    react(),
+    // `/admin` 带 noindex：一页私人工具不该收进 sitemap。
+    // 「noindex」与「请收录我」是互相矛盾的两句话，只能留一句。
+    sitemap({ filter: (page) => !new URL(page).pathname.replace(/\/$/, '').endsWith('/admin') }),
+  ],
 });

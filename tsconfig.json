@@ -5,6 +5,12 @@
   "compilerOptions": {
     // @astrojs/react 在本任务已接线：.tsx 走 React 的 JSX 运行时
     "jsx": "react-jsx",
-    "jsxImportSource": "react"
+    "jsxImportSource": "react",
+    // 后台组件（shadcn/ui 惯例）用 `@/...` 引用 src 下文件。
+    // Astro 会读取 tsconfig 的 paths 注入 Vite resolve.alias，无需再配 vite。
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   }
 }
