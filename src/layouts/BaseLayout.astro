@@ -4,6 +4,7 @@ import GlobalStyles from '../components/GlobalStyles.astro';
 import Rail from '../components/Rail.astro';
 import ThemeBootstrap from '../components/ThemeBootstrap.astro';
 import type { NavKey } from '../lib/types';
+import { withBase } from '../lib/urls';
 import { siteConfig } from '../../site.config.ts';
 
 interface Props {
@@ -62,8 +63,13 @@ const canonical = new URL(canonicalHref ?? Astro.url.pathname, siteConfig.site.u
     <title>{pageTitle}</title>
     <meta name="description" content={description} />
     <meta name="color-scheme" content="light dark" />
-    <!-- 图标是内联 SVG 文件，随 base 一起走（GH Pages 子路径下不能写死 /favicon.svg）。 -->
-    <link rel="icon" href={`${import.meta.env.BASE_URL}favicon.svg`} type="image/svg+xml" />
+    <!--
+      图标是内联 SVG 文件，随 base 一起走（GH Pages 子路径下不能写死 /favicon.svg）。
+      必须经 `withBase` 而不是 `${import.meta.env.BASE_URL}favicon.svg`：Astro 7 的
+      BASE_URL 是**不带尾斜杠**的 `/repo`，直接拼接会得到 `/repofavicon.svg`——
+      子路径部署下图标 404，而且这种 404 只有打开 DevTools 才看得见。
+    -->
+    <link rel="icon" href={withBase('/favicon.svg')} type="image/svg+xml" />
     <link rel="canonical" href={canonical} />
     <link rel="alternate" hreflang={siteConfig.site.lang} href={canonical} />
     <link rel="alternate" hreflang="x-default" href={canonical} />

@@ -168,4 +168,31 @@ describe('canonical 与 base 前缀', () => {
       expect(allowed, rel).toContain(href);
     }
   });
+
+  /**
+   * 图标路径必须跟着 base 走。
+   *
+   * 这条守卫的由来：`BaseLayout` 原本写的是 `${import.meta.env.BASE_URL}favicon.svg`，
+   * 而 Astro 7 的 BASE_URL **不带尾斜杠**（`/repo`），于是子路径部署时产物里是
+   * `/repofavicon.svg` —— 一个 404，而且只有在 DevTools 的 Network 面板里才看得见，
+   * 页面上毫无症状。改成 `withBase('/favicon.svg')` 后两种部署形态都正确。
+   *
+   * 断言写成"所有站内绝对路径都必须以 base 开头"，而不是只盯 favicon：
+   * 同一个坑对任何 `href="/..."` 的硬编码都成立。
+   */
+  test('所有站内绝对路径都带 base 前缀（防止 /repofavicon.svg 这类拼接错误）', () => {
+    const pages = [...publicPages, 'admin/index.html'];
+    for (const rel of pages) {
+      const source = html(rel);
+      // 取出所有 href/src 的站内绝对路径（`//` 开头是协议相对外链，跳过）。
+      const roots = [...source.matchAll(/(?:href|src)="(\/(?!\/)[^"]*)"/g)]
+        .map((match) => match[1]!)
+        // `/_astro/...` 由 Astro 自己按 base 生成，一并检查更保险。
+        .filter((path) => !path.startsWith('//'));
+
+      for (const path of roots) {
+        expect(path.startsWith(`${baseNoSlash}/`), `${rel} 的站内路径没带 base：${path}`).toBe(true);
+      }
+    }
+  });
 });

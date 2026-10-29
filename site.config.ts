@@ -9,7 +9,20 @@ export const siteConfig = {
     title: "待办簿",
     tagline: "每天写清楚要做什么，然后一条条划掉。",
     author: "maochenyu",
+    /**
+     * 站点地址（canonical / sitemap / RSS 的基址）。
+     *
+     * 部署前改成你的真实地址。带不带尾斜杠都行——读取方一律用 `new URL()` 解析。
+     */
     url: "https://example.github.io",
+    /**
+     * 部署在子路径下时的前缀，**只有这一处需要按平台改**：
+     * - GitHub Pages **项目站**（`https://<user>.github.io/<repo>/`）→ `"/<repo>"`
+     * - GitHub Pages 用户站、Cloudflare Pages、Vercel、EdgeOne → `"/"`
+     *
+     * 忘了改是唯一「部署后整站白屏」的坑：HTML 里的 `_astro/*` 与站内链接都会指向
+     * 根路径，而资源实际在子路径下。README 的部署段有同一句话的加粗版。
+     */
     basePath: "/", // GH Pages 项目站填 "/<repo>"
     lang: "zh-CN",
     timeZone: "Asia/Shanghai", // 全站"今天"的唯一依据

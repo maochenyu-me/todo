@@ -1,0 +1,57 @@
+name: Deploy to GitHub Pages
+
+# 为什么用 `withastro/action` 而不是手写 install/build/upload：
+# 它会自己读仓库里的包管理器（本项目是 npm）、跑 `npm run build`、把 `dist` 打成
+# Pages artifact，并处理 Node 版本与缓存。手写一遍只会多出一份会和 Astro 升级分叉的步骤。
+#
+# 三条硬要求，缺一个都会静默失败：
+# 1. `permissions.pages: write` —— 没有它 `deploy-pages` 无权发布。
+# 2. `permissions.id-token: write` —— OIDC 用它换取部署凭据。
+# 3. `public/.nojekyll` —— 没有它 GitHub 的 Jekyll 会吃掉 `_astro/` 开头的资源目录
+#    （Astro 的 JS/CSS 全在那儿），站点于是白屏、控制台一片 404。
+#    这个文件**已经提交进仓库**（不是靠这里 touch）：Astro 会把 `public/` 原样拷进
+#    `dist/`，所以本地构建、手动发 gh-pages 分支、走本工作流，三种路径都带着它。
+
+on:
+  push:
+    branches: [main]
+  # 允许在 Actions 页面手动重跑（改完 secret 之后不用再空推一个 commit）。
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时刻只跑一次部署；不要取消正在进行的发布（取消会留下半发布的站点）。
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build
+        uses: withastro/action@v3
+        with:
+          node-version: 22
+        env:
+          # 口令派生值是**构建时**内联进 bundle 的，所以必须在构建这一步就注入。
+          # 值就是 `npm run gen-password` 输出那一整行等号右边的部分（含 `\$` 转义）：
+          # secret 存的是文本，不经 dotenv 展开，转义与否都能用，但保持与 .env 一致最不容易搞混。
+          PUBLIC_ADMIN_PASSWORD_KDF: ${{ secrets.PUBLIC_ADMIN_PASSWORD_KDF }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

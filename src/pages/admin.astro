@@ -32,6 +32,7 @@ import '../styles/global.css';
 import AdminApp from '../admin/AdminApp';
 import GlobalStyles from '../components/GlobalStyles.astro';
 import ThemeBootstrap from '../components/ThemeBootstrap.astro';
+import { withBase } from '../lib/urls';
 import { siteConfig } from '../../site.config.ts';
 
 const title = `后台｜${siteConfig.site.title}`;
@@ -45,7 +46,9 @@ const title = `后台｜${siteConfig.site.title}`;
     <title>{title}</title>
     <meta name="robots" content="noindex" />
     <meta name="color-scheme" content="light dark" />
-    <link rel="icon" href={`${import.meta.env.BASE_URL}favicon.svg`} type="image/svg+xml" />
+    {/* 图标随 base 走。必须经 `withBase`：Astro 7 的 BASE_URL 不带尾斜杠，
+        直接拼接会得到 `/repofavicon.svg`（子路径部署下 404）。理由详见 BaseLayout。 */}
+    <link rel="icon" href={withBase('/favicon.svg')} type="image/svg+xml" />
     {/* 首帧前定明暗的内联脚本：与 `BaseLayout` 共用同一份源码。
         必须留在 `<head>` 里、第一次绘制前同步执行。 */}
     <ThemeBootstrap />
