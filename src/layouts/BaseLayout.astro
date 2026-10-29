@@ -60,6 +60,8 @@ const canonical = new URL(canonicalHref ?? Astro.url.pathname, siteConfig.site.u
     <title>{pageTitle}</title>
     <meta name="description" content={description} />
     <meta name="color-scheme" content="light dark" />
+    <!-- 图标是内联 SVG 文件，随 base 一起走（GH Pages 子路径下不能写死 /favicon.svg）。 -->
+    <link rel="icon" href={`${import.meta.env.BASE_URL}favicon.svg`} type="image/svg+xml" />
     <link rel="canonical" href={canonical} />
     <link rel="alternate" hreflang={siteConfig.site.lang} href={canonical} />
     <link rel="alternate" hreflang="x-default" href={canonical} />
