@@ -1,0 +1,71 @@
+#!/usr/bin/env node
+/**
+ * E2E 的服务进程：**先构建，再预览**。
+ *
+ * 为什么要一个脚本而不是 `npm run build && npx astro preview --port 4323`：
+ *
+ * 1. **验收的是产物**。`astro preview` 只伺服 `dist/`，而 `dist/` 是可以过期的——
+ *    对着上一次的产物跑一遍全绿，什么也没证明。所以构建是这条命令的第一步，
+ *    且构建失败必须让服务起不来（Playwright 会以"webServer 启动失败"报出来），
+ *    而不是拿旧 dist 假装成功。
+ * 2. **端口只有一个真相**。端口写死在 `playwright.config.ts` 的 `BASE_URL` 里，
+ *    这个脚本从环境变量接过来，两处不会漂。默认 4323 是刻意的：4321 是
+ *    `astro dev` 的默认端口，本地同时开着 dev server 时不该互相抢占。
+ * 3. **Windows 上不经过 npm**。`npm run preview -- --port 4323` 在 PowerShell 5.1 下
+ *    会被吃掉第一个 `--`，`--port` 根本到不了 astro（同一个坑在 `scripts/archive.mjs`
+ *    的头注释里）。这里直接调 astro 的 CLI 入口，argv 原样传递。
+ *
+ * 退出即清理：自己退出时把子进程一起杀掉，避免 Ctrl-C 之后留一个占着端口的孤儿
+ * 预览服务——下一次跑 E2E 就会莫名其妙地"复用"它（`reuseExistingServer`），
+ * 于是整套用例跑在一份谁也没构建过的旧产物上。
+ */
+
+import { spawn } from 'node:child_process';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const PORT = process.env.E2E_PORT ?? '4323';
+
+/** Astro 的 CLI 入口（不经 node_modules/.bin，免掉平台上 .cmd 的解析差异）。 */
+const ASTRO_CLI = join(ROOT, 'node_modules', 'astro', 'bin', 'astro.mjs');
+
+/** 当前活着的子进程。同一时刻只有一个（build 完才起 preview）。 */
+let active = null;
+
+/** 子进程：继承 stdio，让 Playwright 的 `stdout: 'pipe'` 能看见构建与预览日志。 */
+function run(args) {
+  active = spawn(process.execPath, [ASTRO_CLI, ...args], {
+    cwd: ROOT,
+    stdio: 'inherit',
+    env: process.env,
+  });
+  return active;
+}
+
+function shutdown(code) {
+  if (active !== null && active.exitCode === null) {
+    // `astro preview` 是常驻进程，不主动杀就活过父进程。
+    active.kill('SIGTERM');
+  }
+  process.exit(code ?? 0);
+}
+
+process.on('SIGINT', () => shutdown(0));
+process.on('SIGTERM', () => shutdown(0));
+
+const build = run(['build']);
+build.on('exit', (code) => {
+  if (code !== 0) {
+    console.error(`[e2e-server] 构建失败（exit ${code}），不启动预览服务`);
+    shutdown(code ?? 1);
+    return;
+  }
+  console.log(`[e2e-server] 构建完成，启动预览服务 http://127.0.0.1:${PORT}`);
+  // `--host 127.0.0.1`：astro preview 默认只听 `localhost`，而 `localhost` 在 Windows 上
+  // 可能解析到 `::1`。Playwright 的健康检查打的是 `127.0.0.1`，两者不是同一个地址，
+  // 服务明明起来了健康检查却一直超时（实测踩过：报"Timed out waiting from config.webServer"，
+  // 而日志里服务是 ready 的）。显式绑 IPv4 回环，让两边是同一个地址。
+  const preview = run(['preview', '--host', '127.0.0.1', '--port', PORT]);
+  preview.on('exit', (previewCode) => shutdown(previewCode ?? 0));
+});
