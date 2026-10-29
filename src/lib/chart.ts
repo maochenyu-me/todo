@@ -223,6 +223,18 @@ export type BarPlanInput = {
   max?: number;
   /** 绘制护栏。缺省用 `BAR_GEOMETRY.ceiling`；非法值回落到默认护栏。 */
   ceiling?: number;
+  /**
+   * 目标画布宽度（用户单位 = 像素）。缺省不设：柱位取自然宽度（见 `slot`）。
+   *
+   * 存在理由只有一处：宽屏上这张图要铺满比正文更宽的图表列（`/stats`）。而**加宽柱位
+   * 不会改动字号**——方块 8、柱底字 12 都是固定的用户单位，柱位只是它们之间的间距，
+   * 所以它可以既铺满 672px 又不把刻度字放大成 17px。这一点和折线图完全不同：
+   * 那边加宽画布会把 14px 的轴字按比例放大（或缩小时压到读不清）。
+   *
+   * 只**加宽**、绝不缩窄：目标比自然宽度小、非正数或非有限值时，按自然宽度画——
+   * 窄屏另有横向滚动兜底（见 `BarSquares`），这里不需要也不应该帮忙「挤紧」。
+   */
+  width?: number;
 };
 
 /**
@@ -235,7 +247,7 @@ export type BarPlanInput = {
  * - `peak` **永远**是真实峰值，与护栏无关。
  * - `showValues === clipped`：一旦有柱子被夹住，柱顶就必须写出真实数值。
  */
-export function planBars({ data, max, ceiling }: BarPlanInput): BarPlan {
+export function planBars({ data, max, ceiling, width }: BarPlanInput): BarPlan {
   const rows: Omit<BarPlanRow, 'x' | 'centerX' | 'topY'>[] = [];
   let peak = 0;
   for (const item of data) {
@@ -277,26 +289,43 @@ export function planBars({ data, max, ceiling }: BarPlanInput): BarPlan {
     : 0;
 
   // 标签与数值共用同一个柱位；两者都要留缝。
-  const slot = Math.max(
+  const naturalSlot = Math.max(
     BAR_GEOMETRY.slot,
     Math.ceil(Math.max(widestLabel, widestValue) + labelGap),
   );
   // 判据：最宽的标签 + 最小缝 ≤ 生效柱位（宽度是取 max 来的，所以恒成立；
   // 这个字段用来在测试里钉住「将来若有人把 max 去掉，立刻红」）。
-  const labelFits = Math.max(widestLabel, widestValue) + labelGap <= slot;
+  const labelFits = Math.max(widestLabel, widestValue) + labelGap <= naturalSlot;
 
   const head = showValues ? BAR_GEOMETRY.valueHead : 0;
   const baseline = head + drawRows * BAR_GEOMETRY.row;
+
+  /*
+   * 柱位（`slot`）＝相邻两根柱子的中心距。
+   *
+   * 缺省就是自然宽度 `naturalSlot`。调用方给了更大的 `width` 时，把多出来的横向空间
+   * **平均分给 12 个柱位**：字号、方块边长、柱宽一个都不动，只是间距变大。
+   * 这正是这张图能「铺满宽列而不放大字号」的原因（见 `BarPlanInput.width`）。
+   *
+   * 只加宽不缩窄：目标比自然宽度小（含窄屏）时一律按自然宽度画——挤紧会把
+   * 柱底标签推到撞字，而窄屏本来就该靠横向滚动看全（`BarSquares` 的容器负责）。
+   */
+  const naturalWidth = Math.max(rows.length * naturalSlot, naturalSlot);
+  const requested = Number.isFinite(width) ? Math.floor(width as number) : 0;
+  const stretched = rows.length > 0 && requested > naturalWidth;
+  const slot = stretched ? requested / rows.length : naturalSlot;
   // 至少一个柱位的宽度：空数据已走空状态，这里只是不让 `viewBox="0 0 0 …"` 出现。
-  const width = Math.max(rows.length * slot, slot);
+  const planWidth = Math.max(rows.length * slot, slot);
   const height = baseline + BAR_GEOMETRY.axisGap + BAR_GEOMETRY.labelHeight;
 
   const squares: { x: number; y: number }[] = [];
   const placed: BarPlanRow[] = rows.map((row, index) => {
     const drawnRows = Math.min(row.value, drawRows);
-    const x =
-      index * slot + (slot - BAR_GEOMETRY.bar) / 2 + (BAR_GEOMETRY.bar - BAR_GEOMETRY.square) / 2;
     const centerX = index * slot + slot / 2;
+    // 方块按柱心居中；只在被拉宽时才四舍五入到整像素（8px 的小方块落在半像素上会发虚），
+    // 自然宽度下 `slot` 本身是整数，四舍五入拿到的仍是原来的坐标。
+    const rawX = centerX - BAR_GEOMETRY.bar / 2 + (BAR_GEOMETRY.bar - BAR_GEOMETRY.square) / 2;
+    const x = stretched ? Math.round(rawX) : rawX;
     const topY = baseline - drawnRows * BAR_GEOMETRY.row;
     for (let unit = 0; unit < drawnRows; unit += 1) {
       squares.push({ x, y: baseline - (unit + 1) * BAR_GEOMETRY.row + BAR_GEOMETRY.gap });
@@ -312,7 +341,7 @@ export function planBars({ data, max, ceiling }: BarPlanInput): BarPlan {
     clipped,
     showValues,
     hasUnits,
-    width,
+    width: planWidth,
     height,
     baseline,
     squares,

@@ -138,6 +138,32 @@ const trendPoints = trendHasData
 
 /* ---------------- 排版常量：四块共用，改一处就够 ---------------- */
 
+/**
+ * 两把尺子。这一页是站内唯一同时有两种「行宽」的页面，必须说清各自的理由：
+ *
+ * - `PROSE_MEASURE`：**正文**的度量——34 个汉字（spec §7.3），与全站其他页一致。
+ *   页首、四个小标题、大数字下面那句、两张图下面那句，全部锁在这把尺子上；
+ *   多一个字都不给，因为这几行是「读」的，不是「看」的。
+ * - `CHART_MEASURE`：**图表**的度量——42rem（672px），正好是 lg 下整条主列的内容宽
+ *   （48rem 列 − 2×3rem 内边距）；md 下主列内容宽 704px，42rem 也装得下。
+ *   图不是散文：把 12 周柱状压进 34 字的行宽，换来的不是「好读」，而是右边一大片
+ *   空白加一堆挤在一起的小方块。
+ *
+ * 两把尺子都由**页面自己**持有，`BaseLayout` 只负责把列的**上限**打开到 48rem
+ * （opt-in 的 `wide`），不改全站默认的 40rem——别的页面一个像素都没动。
+ */
+const PROSE_MEASURE = 'max-w-[34rem]';
+const CHART_MEASURE = 'max-w-[42rem]';
+/**
+ * 图表画布的**构建期**宽度：42rem = 672px（16px 根字号）。
+ *
+ * 为什么不用 CSS 把 `<svg>` 拉宽：拉宽会按比例放大轴文字（672/456 ≈ 1.47，柱底
+ * 12px 的日期会变成 17.7px，比正文还大）。所以柱状图改的是**柱距**——`planBars()`
+ * 把多出来的横向空间平摊给 12 个柱位，方块 8px、字号 12px 纹丝不动（见
+ * `BAR_GEOMETRY` 与组件头的「宽屏」一节）。
+ */
+const CHART_CANVAS_WIDTH = 672;
+
 /** 大数字：字大、行高压紧、等宽数字（两位百分数不会跳动，也不会与下面那行对不齐）。 */
 const BIG_NUMBER_CLASS =
   'text-[2.5rem] leading-none font-semibold tabular-nums tracking-[-0.02em] text-foreground';
@@ -150,8 +176,13 @@ const SECTION_NOTE_CLASS = 'mt-2 text-[0.8125rem] text-muted-foreground';
 const CHART_NOTE_CLASS = 'mt-2 text-[0.8125rem] text-muted-foreground';
 ---
 
-<BaseLayout title="统计" activeNav="stats">
-  <header class="pb-7">
+<BaseLayout title="统计" activeNav="stats" wide>
+  {/*
+    页首与全部说明文字锁在 34 字行宽（`PROSE_MEASURE`）；两张图各自那块放到
+    图表行宽（`CHART_MEASURE`）。分隔线（`border-t`）画在 `<section>` 上，
+    所以四条线的宽度一致、都到图表列右端——线不等长比线长短更刺眼。
+  */}
+  <header class={`pb-7 ${PROSE_MEASURE}`}>
     <h1 class="text-[1.375rem] font-semibold tracking-[-0.01em] text-foreground">统计</h1>
     <p class="mt-1.5 text-[0.8125rem] text-muted-foreground">
       只数完成情况：划掉了多少、连着多少天、最近几周的走势。不列出事项本身。
@@ -164,23 +195,25 @@ const CHART_NOTE_CLASS = 'mt-2 text-[0.8125rem] text-muted-foreground';
   {
     showCompletionRate ? (
       <section aria-labelledby="rate-heading" class="border-t border-border py-6">
-        <h2 id="rate-heading" class={SECTION_HEADING_CLASS}>总完成率</h2>
+        <div class={PROSE_MEASURE}>
+          <h2 id="rate-heading" class={SECTION_HEADING_CLASS}>总完成率</h2>
 
-        {overall.total === 0 ? (
-          <div class="mt-3">
-            <EmptyState
-              title={`${windowLabel}还没有可统计的事项`}
-              hint="写下一天、再划掉几条之后，这里会出现一个百分比。"
-            />
-          </div>
-        ) : (
-          <div class="mt-2">
-            <p class={BIG_NUMBER_CLASS}>{percent(overall.rate)}</p>
-            <p class={`${SECTION_NOTE_CLASS} tabular-nums`}>
-              {windowLabel}的 {overall.total} 条事项里，划掉了 {overall.done} 条。
-            </p>
-          </div>
-        )}
+          {overall.total === 0 ? (
+            <div class="mt-3">
+              <EmptyState
+                title={`${windowLabel}还没有可统计的事项`}
+                hint="写下一天、再划掉几条之后，这里会出现一个百分比。"
+              />
+            </div>
+          ) : (
+            <div class="mt-2">
+              <p class={BIG_NUMBER_CLASS}>{percent(overall.rate)}</p>
+              <p class={`${SECTION_NOTE_CLASS} tabular-nums`}>
+                {windowLabel}的 {overall.total} 条事项里，划掉了 {overall.done} 条。
+              </p>
+            </div>
+          )}
+        </div>
       </section>
     ) : null
   }
@@ -188,35 +221,37 @@ const CHART_NOTE_CLASS = 'mt-2 text-[0.8125rem] text-muted-foreground';
   {
     showStreak ? (
       <section aria-labelledby="streak-heading" class="border-t border-border py-6">
-        <h2 id="streak-heading" class={SECTION_HEADING_CLASS}>连续打卡</h2>
+        <div class={PROSE_MEASURE}>
+          <h2 id="streak-heading" class={SECTION_HEADING_CLASS}>连续打卡</h2>
 
-        {entries.length === 0 ? (
-          <div class="mt-3">
-            <EmptyState
-              title="还没有可以数的天数"
-              hint="某一天的事项全部划掉，连续天数就从那一天开始数。"
-            />
-          </div>
-        ) : (
-          <div class="mt-2">
-            <p class={BIG_NUMBER_CLASS}>
-              {streakDays}
-              <span class="ml-1 text-[1rem] font-normal text-muted-foreground">天</span>
-            </p>
-            {/*
-              0 天不是「空数据」而是「链条断了」，所以照样把数字摆出来，只把话说清楚。
-              零任务的一天既不计入也不断链（见 `stats.ts`），所以这里也不提「休息日」
-              ——那是模块的既定边界，不归本页解释。
-            */}
-            <p class={SECTION_NOTE_CLASS}>
-              {
-                streakDays > 0
-                  ? '从今天往回数，这些天的事项都划完了。'
-                  : '还没有连成串。把某一天的事项全部划掉，就从那一天开始数。'
-              }
-            </p>
-          </div>
-        )}
+          {entries.length === 0 ? (
+            <div class="mt-3">
+              <EmptyState
+                title="还没有可以数的天数"
+                hint="某一天的事项全部划掉，连续天数就从那一天开始数。"
+              />
+            </div>
+          ) : (
+            <div class="mt-2">
+              <p class={BIG_NUMBER_CLASS}>
+                {streakDays}
+                <span class="ml-1 text-[1rem] font-normal text-muted-foreground">天</span>
+              </p>
+              {/*
+                0 天不是「空数据」而是「链条断了」，所以照样把数字摆出来，只把话说清楚。
+                零任务的一天既不计入也不断链（见 `stats.ts`），所以这里也不提「休息日」
+                ——那是模块的既定边界，不归本页解释。
+              */}
+              <p class={SECTION_NOTE_CLASS}>
+                {
+                  streakDays > 0
+                    ? '从今天往回数，这些天的事项都划完了。'
+                    : '还没有连成串。把某一天的事项全部划掉，就从那一天开始数。'
+                }
+              </p>
+            </div>
+          )}
+        </div>
       </section>
     ) : null
   }
@@ -229,13 +264,20 @@ const CHART_NOTE_CLASS = 'mt-2 text-[0.8125rem] text-muted-foreground';
   {
     showTrend ? (
       <section aria-labelledby="weekly-heading" class="border-t border-border py-6">
-        <h2 id="weekly-heading" class={SECTION_HEADING_CLASS}>近 12 周每周完成数</h2>
-
-        <div class="mt-3">
-          <BarSquares data={weekBars} />
+        <div class={PROSE_MEASURE}>
+          <h2 id="weekly-heading" class={SECTION_HEADING_CLASS}>近 12 周每周完成数</h2>
         </div>
 
-        <p class={CHART_NOTE_CLASS}>
+        {/*
+          图表块用更宽的度量。`CHART_CANVAS_WIDTH` 让柱距铺满整个图表列，而柱底字号
+          仍是 12px——加宽的是间距，不是字（见 `stats.astro` 顶部与 `planBars()`）。
+          窄屏上容器比画布窄，由 `BarSquares` 自己的 `overflow-x-auto` 横向滚动兜底。
+        */}
+        <div class={`mt-3 ${CHART_MEASURE}`}>
+          <BarSquares data={weekBars} width={CHART_CANVAS_WIDTH} />
+        </div>
+
+        <p class={`${CHART_NOTE_CLASS} ${PROSE_MEASURE}`}>
           一格一件事。最后一条是本周（周一起算）。窄屏可左右滑动看全 12 周。
         </p>
       </section>
@@ -245,18 +287,28 @@ const CHART_NOTE_CLASS = 'mt-2 text-[0.8125rem] text-muted-foreground';
   {
     showTrend ? (
       <section aria-labelledby="trend-heading" class="border-t border-border py-6">
-        <h2 id="trend-heading" class={SECTION_HEADING_CLASS}>近 90 天每天完成率</h2>
+        <div class={PROSE_MEASURE}>
+          <h2 id="trend-heading" class={SECTION_HEADING_CLASS}>近 90 天每天完成率</h2>
+        </div>
 
-        <div class="mt-3">
-          {/*
-            没有记录的日子是 0%，不是「断开」——`rollingRate` 就是这么给的，
-            这条线因此能贴着底走完整段。这一点必须写在页面上，否则一段贴底的
-            直线会被误读成「那段时间什么都没做」。
-          */}
+        {/*
+          折线图保持**自然宽度 320**，只占图表块的左边一段——这不是漏改，是硬约束：
+          它是「只缩不放」的，画布一加宽就两头不讨好。加到 672 时手机端（内容区 280px）
+          等比缩到 `280 / 672 = 0.42`，14px 的轴字只剩 5.8px；而手机端正是最需要读数的地方。
+          反过来给它 `w-full` 又会在桌面端把轴字放大成 20px 以上（比正文还大）。
+          所以这一块能变宽的只有**容器**，画布本身留在自然尺寸上。
+
+          没有记录的日子是 0%，不是「断开」——`rollingRate` 就是这么给的，
+          这条线因此能贴着底走完整段。这一点必须写在页面上，否则一段贴底的
+          直线会被误读成「那段时间什么都没做」。
+        */}
+        <div class={`mt-3 ${CHART_MEASURE}`}>
           <LineChart points={trendPoints} />
         </div>
 
-        <p class={CHART_NOTE_CLASS}>每天一个点：当天完成了几成。没有记录的日子按 0% 算。</p>
+        <p class={`${CHART_NOTE_CLASS} ${PROSE_MEASURE}`}>
+          每天一个点：当天完成了几成。没有记录的日子按 0% 算。
+        </p>
       </section>
     ) : null
   }
@@ -264,10 +316,12 @@ const CHART_NOTE_CLASS = 'mt-2 text-[0.8125rem] text-muted-foreground';
   {/* 三个开关全关时，页面上只剩页首——与其让人对着一张空白猜，不如说明这是配置。 */}
   {
     !showCompletionRate && !showStreak && !showTrend ? (
-      <EmptyState
-        title="统计项目前都关掉了"
-        hint="frontend.stats 里的三个开关（完成率、连续打卡、趋势）都关着，这一页暂时没有内容。"
-      />
+      <div class={PROSE_MEASURE}>
+        <EmptyState
+          title="统计项目前都关掉了"
+          hint="frontend.stats 里的三个开关（完成率、连续打卡、趋势）都关着，这一页暂时没有内容。"
+        />
+      </div>
     ) : null
   }
 </BaseLayout>

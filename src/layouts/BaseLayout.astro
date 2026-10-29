@@ -15,9 +15,21 @@ interface Props {
    * 否则同一份内容有两个可索引的 URL。其余页面留空，按当前 pathname 自己算。
    */
   canonicalHref?: string;
+  /**
+   * 主列**上限**从 40rem 放宽到 48rem。目前只有 `/stats` 打开。
+   *
+   * 这不是「放宽行宽」：40rem 那条约束约束的是**正文**（约 34 个汉字，spec §7.3），
+   * 而正文的行宽由页面自己用 `max-w-[34rem]` 守住（见 `stats.astro` 的
+   * `PROSE_MEASURE`）。这个开关腾出来的宽度只给**比正文更宽的元素**用——
+   * 统计页那两张图，塞进正文行宽会被压成一条窄带，右边空一大片。
+   *
+   * 所以：不把图表塞进 34 字行宽的页面，一个字都不用改（缺省仍是 40rem）；
+   * 打开它的页面**必须**自己给正文加度量约束，否则正文就会跟着变宽。
+   */
+  wide?: boolean;
 }
 
-const { title, description = siteConfig.site.tagline, activeNav, canonicalHref } = Astro.props;
+const { title, description = siteConfig.site.tagline, activeNav, canonicalHref, wide } = Astro.props;
 
 const pageTitle = title ? `${title}｜${siteConfig.site.title}` : siteConfig.site.title;
 // canonical 由 site.url + 当前 pathname 拼出。pathname 已含 base，
@@ -48,10 +60,20 @@ const canonical = new URL(canonicalHref ?? Astro.url.pathname, siteConfig.site.u
     >
     <div class="lg:grid lg:grid-cols-[15rem_minmax(0,1fr)]">
       <Rail activeNav={activeNav} />
-      <!-- 左对齐、不居中；行宽控制在约 34 个汉字（lg 下 40rem − 2×3rem 内边距） -->
+      {/*
+        左对齐、不居中。缺省 `max-w-[40rem]`：lg 下 40rem − 2×3rem 内边距 = 34 个汉字行宽。
+
+        `wide` 把**列**的上限放到 48rem（lg 下内容宽 42rem），且只给 `/stats`：那一页的
+        正文自己守 34rem，多出来的 8rem 只给两张图。md 就打开是因为图表画布是**构建期定宽**
+        的 672px——768px 视口下 40rem 的列只剩 576px 内容宽，图会被迫横向滚动，而那时
+        屏幕上明明还有地方。md 起列宽 48rem、内容 704px，672 装得下，不必滑。
+      */}
       <main
         id="main"
-        class="w-full max-w-[40rem] min-w-0 px-5 pb-24 pt-9 sm:px-8 lg:px-12 lg:pt-14"
+        class:list={[
+          'w-full min-w-0 px-5 pb-24 pt-9 sm:px-8 lg:px-12 lg:pt-14',
+          wide ? 'max-w-[40rem] md:max-w-[48rem]' : 'max-w-[40rem]',
+        ]}
       >
         <slot />
       </main>

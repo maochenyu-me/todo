@@ -419,6 +419,47 @@ describe('chart.ts — 标签装得下（防「文字被 viewBox 静默裁掉」
     expect(spacing).toBeGreaterThanOrEqual(wide.widestLabel + BAR_GEOMETRY.labelGap);
   });
 
+  test('传入 `width` 只拉开柱距，不动字号与方块边长（宽屏铺满的前提）', () => {
+    const natural = planBars({ data: normalWeeks() });
+    const wide = planBars({ data: normalWeeks(), width: 672 });
+
+    // 画布真的变宽了，而且宽到要求的那个数。
+    expect(wide.width).toBe(672);
+    expect(wide.width).toBeGreaterThan(natural.width);
+
+    // 高度与基线一个单位都没动：加宽是横向的事，绝不能顺带把图拉高。
+    expect(wide.height).toBe(natural.height);
+    expect(wide.baseline).toBe(natural.baseline);
+
+    // 柱距变大，但柱底标签与柱顶数值的**估算宽度**没变——12px 就是 12px。
+    const wideSpacing = wide.rows[1]!.centerX - wide.rows[0]!.centerX;
+    const naturalSpacing = natural.rows[1]!.centerX - natural.rows[0]!.centerX;
+    expect(wideSpacing).toBeGreaterThan(naturalSpacing);
+    expect(wide.widestLabel).toBeCloseTo(natural.widestLabel, 10);
+    expect(wide.labelFits).toBe(true);
+  });
+
+  test('`width` 大于自然宽度时，标签仍不许伸出画布两边', () => {
+    const plan = planBars({ data: normalWeeks(), width: 672 });
+    const half = plan.widestLabel / 2;
+    const first = plan.rows[0]!;
+    const last = plan.rows[plan.rows.length - 1]!;
+    expect(first.centerX - half).toBeGreaterThanOrEqual(0);
+    expect(last.centerX + half).toBeLessThanOrEqual(plan.width);
+    // 方块也在画布内。
+    for (const square of plan.squares) {
+      expect(square.x).toBeGreaterThanOrEqual(0);
+      expect(square.x + BAR_GEOMETRY.square).toBeLessThanOrEqual(plan.width);
+    }
+  });
+
+  test('`width` 只加宽不缩窄：更小的值、非法值一律回到自然宽度', () => {
+    const natural = planBars({ data: normalWeeks() });
+    for (const width of [0, -100, 1, 280, natural.width - 1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(planBars({ data: normalWeeks(), width }).width).toBe(natural.width);
+    }
+  });
+
   test('柱顶真实数值也装得进柱位（`1400` 这种四位数不能撞邻居）', () => {
     const plan = planBars({ data: [{ label: '10/26', value: 1400 }] });
     expect(plan.showValues).toBe(true);
