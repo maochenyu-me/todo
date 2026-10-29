@@ -185,7 +185,15 @@ export async function installFakeGitHub(page: Page, repo: FakeRepo): Promise<Fak
       route.fulfill({
         status,
         contentType: 'application/json',
-        headers,
+        // CORS 头是必须的：页面在 `127.0.0.1` 上，请求打的是 `api.github.com`。
+        // 少了 `allow-origin`，浏览器的 CORS 检查会把响应拦掉（表现为"连不上 GitHub"）；
+        // 少了 `expose-headers`，`github.ts` 读不到令牌过期时间（`verify()` 那一行），
+        // 顶部条会一直显示「令牌有效期未知」——一个看起来正常、其实什么都没验证的假绿。
+        headers: {
+          'access-control-allow-origin': '*',
+          'access-control-expose-headers': 'github-authentication-token-expiration',
+          ...headers,
+        },
         body: JSON.stringify(data),
       });
 

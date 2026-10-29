@@ -55,6 +55,19 @@ test.beforeAll(() => {
   mkdirSync(OUT_DIR, { recursive: true });
 });
 
+/**
+ * 截图只在 desktop 项目下跑一遍。
+ *
+ * 视口由每个用例自己 `setViewportSize` 指定（见文件头），所以两个 project 跑出来的
+ * 是**同一批文件**——第二次只是把第一次的结果原地覆盖一遍，白花一倍时间。
+ */
+test.beforeEach(({}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'desktop-chromium',
+    '截图与视口无关：用例内已显式 setViewportSize，只跑一个 project',
+  );
+});
+
 for (const viewport of VIEWPORTS) {
   for (const theme of ['light', 'dark'] as const) {
     for (const target of PAGES) {

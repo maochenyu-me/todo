@@ -17,7 +17,14 @@ import { todayInZone } from '../../src/lib/date';
 
 const TZ = 'Asia/Shanghai';
 
-/** 与站点同一时区的"今天"（种子数据的最后一天就是它）。 */
+/**
+ * 与站点同一时区的"今天"。
+ *
+ * 这里在**测试进程**里重算一次，而不是从页面读。`scripts/e2e-server.mjs` 保证
+ * 构建紧接着测试发生，所以两边看到的"今天"一致；唯一的裂缝是构建与测试恰好跨过
+ * 午夜（23:59:59 构建、00:00:01 断言），那种情况下这条断言会红——红的理由是真的
+ * （产物已经过期），重跑一次即可，不是需要修的 flaky。
+ */
 const TODAY = todayInZone(TZ);
 
 test.describe('今日页', () => {
@@ -43,11 +50,16 @@ test.describe('今日页', () => {
     await expect(list).toContainText('晚饭后跑五公里');
   });
 
-  test('已完成的事项仍在列表里，带删除线语义', async ({ page }) => {
+  test('已完成的事项仍在列表里，带删除线与读屏文案', async ({ page }) => {
     await page.goto('/');
     // 今天 4 条全部已完成。它们不该从列表里消失——那是"看今天做到了什么"的窗口。
     const items = page.locator('section[aria-labelledby="day-heading"] ul').first().locator('li');
     await expect(items).toHaveCount(4);
+
+    // 完成状态是语义化的：标题包在 <s> 里（删除线），后面跟一句 sr-only「已完成」。
+    // 只断言"条数还是 4"证明不了状态被表达出来，所以两条都查。
+    await expect(items.first().locator('s')).toHaveText('回掉积压的三封邮件，把外包报价定下来');
+    await expect(items.first()).toContainText('已完成');
   });
 
   test('可在页面内翻阅到前一天', async ({ page }) => {

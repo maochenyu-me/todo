@@ -126,7 +126,6 @@ test.describe('② 对口令 → disconnected，且此刻页面上没有任何�
     for (const title of [
       '整理十月账单',
       '把归档脚本写出来',
-      '回掉积压的三件邮件',
       '回掉积压的三封邮件',
       '晚饭后跑五公里',
     ]) {
@@ -149,6 +148,9 @@ test.describe('③ 假 token → ready（Tree + 活跃区文件 + 分支名）',
 
     // 目标仓库与分支是连接的第一证据。
     await expect(page.getByLabel('发布状态')).toContainText('maochenyu/TODO@main');
+    // 令牌过期日来自响应头 `github-authentication-token-expiration`——这一条同时
+    // 证明 CORS 的 `expose-headers` 与 `verify()` 的读头逻辑都通了。
+    await expect(page.getByLabel('发布状态')).toContainText('令牌有效期至 2027-01-01');
 
     const kinds = sequence(repo.calls);
     // 先验证令牌，再列目录，最后逐个读文件——顺序是硬的（读目录失败就没法读文件）。
