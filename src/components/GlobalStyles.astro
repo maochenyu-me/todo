@@ -1,0 +1,47 @@
+---
+/**
+ * 全站共用的一小块全局 CSS：键盘焦点环、选区色、`prefers-reduced-motion`。
+ *
+ * ## 为什么是一份 `.astro` 片段，而不是塞进 `src/styles/global.css`
+ *
+ * `global.css` 是客户批准的色板，**逐字节不可动**（令牌值已冻结），但这条约束只约束
+ * 那个文件，不约束"这些规则只能写两遍"。所以规则放在这里，由
+ * `BaseLayout`（前台）与 `admin.astro`（后台自带外壳）各自 `import` 一次——
+ * 两个外壳共用同一份源码，谁也不会悄悄跑偏，`global.css` 一个字节都不用改。
+ *
+ * ## 为什么这几条规则必须全站都在
+ *
+ * `src/admin/components/ui/` 里的控件**自己不带焦点样式**：`button.tsx` 完全没有焦点态，
+ * `input.tsx` / `select.tsx` / `textarea.tsx` 只改边框颜色。也就是说，键盘焦点能不能看见，
+ * 完全取决于这条 `:focus-visible`。任何渲染这些控件的页面都必须拿到这份 CSS，
+ * 否则控件在键盘下就是隐形的——这正是把它们抽成共用片段的真正原因。
+ *
+ * 注：`<style is:global>` 由 Astro 提升（hoist）到 `<head>`，与本组件的书写位置无关；
+ * 放在哪个页面里用，规则就出现在哪个页面的样式表里。
+ */
+---
+
+<style is:global>
+  /* 键盘焦点：所有可交互元素共用 --primary 的可见焦点环。
+     明确关掉过渡——焦点环必须立刻出现，不能从文字色渐变过去。 */
+  :focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+    transition: none;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklab, var(--primary) 22%, transparent);
+  }
+
+  /* prefers-reduced-motion：关闭全部过渡、动画与平滑滚动 */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition: none !important;
+      animation: none !important;
+      scroll-behavior: auto !important;
+    }
+  }
+</style>

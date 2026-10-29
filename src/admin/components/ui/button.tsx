@@ -9,8 +9,8 @@ import { cn } from '@/lib/utils';
  *
  * 与上游的两处刻意差异：
  * 1. **没有焦点环**。前台与后台共用 `:focus-visible { outline: 2px solid var(--primary) }`
- *    这条全局规则（后台在 `admin.astro` 里同样声明了一份），焦点环由它统一负责；
- *    组件再叠一层 ring 会画出两个圈。
+ *    这条全局规则（唯一一份源码在 `src/components/GlobalStyles.astro`，两个外壳各自引入），
+ *    焦点环由它统一负责；组件再叠一层 ring 会画出两个圈。
  * 2. **没有 `secondary`/`destructive` 令牌**。本站色板只有 background/card/foreground/
  *    muted/border/primary/seal/done，所以 `secondary` 落到 `muted`、`destructive` 落到
  *    印章红 `seal`——变体名保留，色值换成本站approved的那一套。

@@ -1,0 +1,18 @@
+---
+/**
+ * 首帧前定明暗的**内联**脚本（全站两段内联 JS 里的第一段，305 B）。
+ *
+ * 必须是 `is:inline`：它得在 CSS 生效前、第一次绘制前同步跑完，否则会先白后黑（或
+ * 反过来）闪一下。因此它不能被打包、不能延迟、不能改成 `src`——一个字节都别动，
+ * 字节预算（前台 305 + 919 = 1224 B）按这段源码算。
+ *
+ * 前台 `BaseLayout` 与后台 `admin.astro` 各自把它放在自己的 `<head>` 里（后台不继承
+ * `BaseLayout`，但同样要跟随用户选过的三态主题）。
+ */
+---
+
+<!--
+  全站第一段内联 JS（首帧前跑，避免闪白/闪黑）：三态取 localStorage["todo.theme"]，
+  缺键或非法值一律当 system，再按 prefers-color-scheme 决定是否加 .dark。
+-->
+<script is:inline>(function(){var d=document.documentElement,t;try{t=localStorage.getItem("todo.theme")}catch(e){}if(t!=="light"&&t!=="dark")t="system";var k=t==="dark"||(t==="system"&&matchMedia("(prefers-color-scheme:dark)").matches);d.dataset.theme=t;d.classList.toggle("dark",k);d.style.colorScheme=k?"dark":"light"})()</script>

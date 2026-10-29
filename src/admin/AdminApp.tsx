@@ -22,6 +22,7 @@ import { Select } from './components/ui/select';
 import { Toaster } from './components/ui/sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
 import { Textarea } from './components/ui/textarea';
+import { deriveView, type Phase, type View } from './view-state';
 
 /**
  * 后台外壳（`/admin` 的唯一 React 岛屿）。
@@ -34,6 +35,7 @@ import { Textarea } from './components/ui/textarea';
  * `dirty`（有未保存改动）**不是第五个状态**，而是 `ready` 的派生条件——只有在
  * 就绪之上才谈得上「改过没改」。所以下面的 `view` 由 `phase` 加 `dirty` 算出来，
  * 不额外存一份 status，从根上排除「未就绪但有未保存改动」这种非法组合。
+ * 那条计算本身抽在 `./view-state.ts`（纯函数 `deriveView`，有穷举测试）。
  *
  * 每个分支现在只画一个占位块。**Task 13–16 会把占位块整段替换掉**：
  * - Task 13 → `locked` 换成真正的锁屏（口令校验）
@@ -44,12 +46,6 @@ import { Textarea } from './components/ui/textarea';
  * 底部的「调试条」与「技术栈自检」面板同样是临时脚手架：Task 13 接上真实状态机后
  * 整块删除。它们存在的唯一目的，是让当前这一步能人工逐个验证四个视图都渲染得出来。
  */
-
-/** 状态机的四个状态。 */
-type Phase = 'locked' | 'disconnected' | 'ready' | 'publishing';
-
-/** 实际渲染的视图 = 状态机状态 + `ready` 下的派生条件 `dirty`。 */
-type View = Phase | 'dirty';
 
 const PHASE_ORDER: readonly Phase[] = ['locked', 'disconnected', 'ready', 'publishing'];
 
@@ -100,7 +96,7 @@ export default function AdminApp({ siteTitle }: { siteTitle: string }) {
   // `ready` 之上的派生条件；不在 ready 下时它没有意义，也不读。
   const [dirty, setDirty] = React.useState(false);
 
-  const view: View = phase === 'ready' && dirty ? 'dirty' : phase;
+  const view: View = deriveView(phase, dirty);
   const { icon: ViewIcon, title, body } = PLACEHOLDER[view];
 
   return (

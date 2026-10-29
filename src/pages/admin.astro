@@ -9,12 +9,18 @@
  * 宽度的操作台：它不该出现前台导航（点进去就是公开站点的语境），也不该被正文行宽
  * 限制。所以这里是一份自带的极简外壳，比给 `BaseLayout` 加一堆 "后台模式" 开关更干净。
  *
- * 代价与取舍：`BaseLayout` 末尾那三段全局样式（焦点环、选区色、减少动效）本该共用，
- * 但 `src/styles/global.css` 的令牌值已冻结（客户批准的色板，逐字节不可动），
- * 所以在这里原样重述一份，下面有注释标明"两者是同一份规则"。
+ * ## 与 `BaseLayout` 共用的两块（`src/components/` 下的两个片段）
  *
- * 保留的只有 `BaseLayout` 里那段"首帧前定明暗"的内联脚本：后台同样要跟随用户选过的
- * 三态主题，否则会先白后黑闪一下。
+ * 外壳是独立的，但有两块内容必须与前台**完全一致**，所以它们不再是"这边也抄一遍"，
+ * 而是各自只有一份源码：
+ * - `GlobalStyles.astro`：焦点环、选区色、`prefers-reduced-motion`。这几条是
+ *   `src/admin/components/ui/` 那批控件的焦点可见性的**唯一来源**（`button.tsx` 压根不带
+ *   焦点样式，`input/select/textarea` 只改边框颜色），漏掉它，键盘用户在后台就看不出
+ *   焦点在哪。任何将来渲染这批控件的页面同样要靠它。
+ * - `ThemeBootstrap.astro`：首帧前定明暗的内联脚本，必须留在 `<head>` 里同步执行。
+ *
+ * 抽成片段与色板无关：`src/styles/global.css` 是客户批准的那份，**逐字节没有改动**；
+ * 共用的是"规则"，不是令牌值。
  *
  * ## 索引
  *
@@ -24,6 +30,8 @@
  */
 import '../styles/global.css';
 import AdminApp from '../admin/AdminApp';
+import GlobalStyles from '../components/GlobalStyles.astro';
+import ThemeBootstrap from '../components/ThemeBootstrap.astro';
 import { siteConfig } from '../../site.config.ts';
 
 const title = `后台｜${siteConfig.site.title}`;
@@ -38,10 +46,9 @@ const title = `后台｜${siteConfig.site.title}`;
     <meta name="robots" content="noindex" />
     <meta name="color-scheme" content="light dark" />
     <link rel="icon" href={`${import.meta.env.BASE_URL}favicon.svg`} type="image/svg+xml" />
-    <!-- 与 BaseLayout 同一段内联脚本（首帧前跑，避免闪白/闪黑）：三态取
-         localStorage["todo.theme"]，缺键或非法值一律当 system，再按
-         prefers-color-scheme 决定是否加 .dark。 -->
-    <script is:inline>(function(){var d=document.documentElement,t;try{t=localStorage.getItem("todo.theme")}catch(e){}if(t!=="light"&&t!=="dark")t="system";var k=t==="dark"||(t==="system"&&matchMedia("(prefers-color-scheme:dark)").matches);d.dataset.theme=t;d.classList.toggle("dark",k);d.style.colorScheme=k?"dark":"light"})()</script>
+    {/* 首帧前定明暗的内联脚本：与 `BaseLayout` 共用同一份源码。
+        必须留在 `<head>` 里、第一次绘制前同步执行。 */}
+    <ThemeBootstrap />
   </head>
   <body class="min-h-dvh bg-background text-foreground">
     {/*
@@ -52,35 +59,8 @@ const title = `后台｜${siteConfig.site.title}`;
       不会先闪一块白。
     */}
     <AdminApp siteTitle={siteConfig.site.title} client:only="react" />
+    {/* 焦点环 / 选区色 / 减少动效：与 `BaseLayout` 共用同一份源码。
+        `<style is:global>` 会被 Astro 提升到 `<head>`，位置只影响样式表内的先后顺序。 */}
+    <GlobalStyles />
   </body>
 </html>
-
-<style is:global>
-  /*
-    与 BaseLayout 末尾同一份规则（后台没有继承那个布局，所以在这里重述一遍）。
-    改这里的时候记得同步改 src/layouts/BaseLayout.astro，否则前台与后台的焦点环会走样。
-  */
-
-  /* 键盘焦点：所有可交互元素共用 --primary 的可见焦点环。
-     明确关掉过渡——焦点环必须立刻出现，不能从文字色渐变过去。 */
-  :focus-visible {
-    outline: 2px solid var(--primary);
-    outline-offset: 2px;
-    transition: none;
-  }
-
-  ::selection {
-    background-color: color-mix(in oklab, var(--primary) 22%, transparent);
-  }
-
-  /* prefers-reduced-motion：关闭全部过渡、动画与平滑滚动 */
-  @media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-      transition: none !important;
-      animation: none !important;
-      scroll-behavior: auto !important;
-    }
-  }
-</style>
