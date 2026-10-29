@@ -95,12 +95,12 @@ export function EditorView({ entry, publishing, patchDay }: EditorViewProps) {
         </p>
       ) : (
         <ol className="flex flex-col gap-1.5">
-          {entry.tasks.map((task) => (
+          {entry.tasks.map((task, index) => (
             <TaskRow
               key={task.id}
               task={task}
-              isFirst={task.order === 0}
-              isLast={task.order === entry.tasks.length - 1}
+              isFirst={index === 0}
+              isLast={index === entry.tasks.length - 1}
               publishing={publishing}
               menuOpen={menuTaskId === task.id}
               onToggleMenu={() =>
@@ -267,11 +267,16 @@ function TaskRow({
       </div>
 
       {menuOpen ? (
-        <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-border pt-2">
+        <div
+          role="group"
+          aria-label={`「${task.title}」的操作`}
+          className="mt-2 flex flex-wrap items-center gap-2 border-t border-border pt-2"
+        >
           <Button
             variant="ghost"
             size="sm"
             disabled={publishing || isFirst}
+            aria-label={`上移「${task.title}」`}
             onClick={() => onMove('up')}
           >
             上移
@@ -280,14 +285,22 @@ function TaskRow({
             variant="ghost"
             size="sm"
             disabled={publishing || isLast}
+            aria-label={`下移「${task.title}」`}
             onClick={() => onMove('down')}
           >
             下移
           </Button>
-          <Button variant="ghost" size="sm" disabled={publishing} onClick={onEdit}>
+          <Button variant="ghost" size="sm" disabled={publishing} aria-label={`编辑「${task.title}」`} onClick={onEdit}>
             编辑
           </Button>
-          <Button variant="ghost" size="sm" className="text-seal hover:text-seal" disabled={publishing} onClick={onDelete}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-seal hover:text-seal"
+            disabled={publishing}
+            aria-label={`删除「${task.title}」`}
+            onClick={onDelete}
+          >
             删除
           </Button>
         </div>

@@ -1,7 +1,7 @@
 import * as React from 'react';
 
 import type { Priority, Task } from '@/lib/types';
-import { validateTask } from '../../lib/validate';
+import { validateTask } from '@/lib/validate';
 
 import type { TaskDraft } from '../state/operations';
 import { Button } from './ui/button';
