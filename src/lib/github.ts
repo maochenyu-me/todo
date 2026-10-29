@@ -168,6 +168,17 @@ function assertRepoPath(path: unknown): string {
   if (!isValidDateKey(dateKey)) {
     throw new GitHubError(`仓库路径不合法：${path}（${dateKey} 不是真实存在的日期）`);
   }
+  // 归档路径的年份目录必须与日期自身年份一致：`entryPath()` 永远用 `dateKey.slice(0,4)`，
+  // 而 `archive/2025/2026-03-01.json` 也能过上面的正则。recursive 扫描按文件名取键，
+  // 所以这种错位不会丢数据，但它会让「归档页按年份分桶」这个前提悄悄失真。
+  if (ARCHIVE_PATH_RE.test(path)) {
+    const yearDir = path.slice(ARCHIVE_DIR.length + 1, ARCHIVE_DIR.length + 5);
+    if (yearDir !== dateKey.slice(0, 4)) {
+      throw new GitHubError(
+        `仓库路径不合法：${path}（归档目录 ${yearDir} 与日期年份 ${dateKey.slice(0, 4)} 不一致）`,
+      );
+    }
+  }
   return path;
 }
 

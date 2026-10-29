@@ -587,6 +587,33 @@ describe('commitChanges：原子提交的调用序列', () => {
     expect(calls).toHaveLength(0);
   });
 
+  test('归档路径的年份目录必须与日期年份一致', async () => {
+    const { client, calls } = fakeGitHub();
+    const res = await caught(
+      client.commitChanges({
+        writes: [{ path: 'src/data/archive/2025/2026-03-01.json', content: '{}' }],
+        deletes: [],
+        ...COMMIT_INPUT,
+      }),
+    );
+    expect(res).toBeInstanceOf(GitHubError);
+    expect((res as GitHubError).message).toMatch(/归档目录 2025 与日期年份 2026 不一致/);
+    expect(calls).toHaveLength(0);
+  });
+
+  test('删除列表不是数组时也报 GitHubError', async () => {
+    const { client, calls } = fakeGitHub();
+    const bad = await caught(
+      client.commitChanges({
+        writes: [],
+        deletes: 'nope',
+        ...COMMIT_INPUT,
+      } as unknown as Parameters<typeof client.commitChanges>[0]),
+    );
+    expect(bad).toBeInstanceOf(GitHubError);
+    expect(calls).toHaveLength(0);
+  });
+
   test('写入/删除列表不是数组时报 GitHubError 而不是 TypeError', async () => {
     const { client, calls } = fakeGitHub();
     const bad = await caught(
@@ -681,6 +708,7 @@ describe('commitChanges：失败与重试', () => {
     expect((error as GitHubError).status).toBe(500);
     expect(calls.filter((c) => c.method === 'PATCH')).toHaveLength(0);
     expect(calls.filter((c) => c.path === '/git/trees')).toHaveLength(0);
+    expect(calls.filter((c) => c.path === '/git/commits')).toHaveLength(0);
     // token 只能出现在 Authorization 头里，绝不能漏进错误文案
     expect((error as GitHubError).message).not.toContain(TOKEN);
   });
