@@ -150,7 +150,8 @@ const trendPoints = trendHasData
  *   空白加一堆挤在一起的小方块。
  *
  * 两把尺子都由**页面自己**持有，`BaseLayout` 只负责把列的**上限**打开到 48rem
- * （opt-in 的 `wide`），不改全站默认的 40rem——别的页面一个像素都没动。
+ * （opt-in 的 `wide`，外层框架跟着放到 63rem 以保持居中），不改全站默认的 40rem。
+ * 别的页面在窄屏上一个像素都没动，桌面只是整体居中。
  */
 const PROSE_MEASURE = 'max-w-[34rem]';
 const CHART_MEASURE = 'max-w-[42rem]';
