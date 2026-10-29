@@ -1,12 +1,16 @@
 ---
 /**
- * 一天的内容：印章 + 刻度进度 + 任务列表 + 「已完成 N」折叠组 + 前一天/后一天。
+ * 一天的内容：印章 + 刻度进度 + 任务列表 + 前一天/后一天。
  *
  * `/`（今天）与 `/date/[date]`（任意一天）共用这一份版式——spec 规定两者「同布局」，
  * 页面上唯一的差别在 `<head>`（canonical／title），那是页面自己的事，不在这里。
  *
+ * **一天的事全在一张表里**：已完成的任务照样留在原位，只是被 `TaskRow` 划掉。
+ * 早先版本把已完成收进底部「已完成 N」折叠组，代价是「今天全做完了」的那一天
+ * 主列表空着、读者要点一下才看得见自己做到了什么——这正是这个页面存在的意义，
+ * 所以取消折叠组。顺序只按日程，不按完成状态重排：完成与否不该把一天的时序打乱。
+ *
  * 本组件**只在构建期渲染**：零 `<script>`、零 `client:*`、零 hydration。
- * 折叠组用的是原生 `<details>`/`<summary>`，所以连一点点 JS 都不需要。
  */
 import { ChevronLeft, ChevronRight } from '@lucide/astro';
 import DateStamp from './DateStamp.astro';
@@ -65,22 +69,17 @@ const isCorrupt = corrupt && !hasTasks;
 const tasks: Task[] = entry?.tasks ?? [];
 const summary = daySummary({ date: dateKey, tasks });
 
-/** 读者所见顺序：未完成在上、已完成在下，各组内部再「先时段、后手序」。 */
-function inReadingOrder(list: Task[]): Task[] {
-  const { scheduled, unscheduled } = orderTasks(list);
-  return [...scheduled, ...unscheduled];
-}
-
-const readerOrder = [
-  ...inReadingOrder(tasks.filter((task) => !task.done)),
-  ...inReadingOrder(tasks.filter((task) => task.done)),
-];
+// 读者所见顺序：先有 `timeBlock` 的按开始时间，再没有 `timeBlock` 的按 `order`。
+// 只按时间排，**不**按完成状态分组：完成的那条留在它本该在的时刻上，
+// 否则一个划掉的上午事项会被挤到下午未完成事项的下面，这一天就读不出先后了。
+const { scheduled, unscheduled } = orderTasks(tasks);
+const readerOrder = [...scheduled, ...unscheduled];
 
 // maxTasksPerPage 是护栏而不是排版目标：超了就只渲染前 N 条，并如实报出还剩多少条。
 // 上限非正数/非有限值时 `capTasks` 视作「不限」并用 `cap: null` 表示，绝不会说出「（0 条）」。
+// 计数口径是**合并后的单一列表**（`readerOrder` 就是最终顺序，不再拆开/合并），
+// 所以「另有 N 条」与页面上真实少掉的行数一致。
 const { shown, hidden: hiddenCount, cap } = capTasks(readerOrder, maxTasksPerPage);
-const open = shown.filter((task) => !task.done);
-const done = shown.filter((task) => task.done);
 
 const isEmpty = tasks.length === 0;
 
@@ -129,7 +128,7 @@ const ticksEmptyLabel = isCorrupt
   {isEmpty && !isCorrupt ? <EmptyState title={emptyTitle} hint={emptyHint} /> : null}
 
   {
-    open.length > 0 ? (
+    shown.length > 0 ? (
       <div>
         {/* 列头：只列真实存在的列。showTimeBlock 关掉时不留「时间」标题与空槽。 */}
         <div
@@ -141,7 +140,7 @@ const ticksEmptyLabel = isCorrupt
           <span>事项</span>
         </div>
         <ul>
-          {open.map((task) => (
+          {shown.map((task) => (
             <TaskRow
               task={task}
               showTimeBlock={showTimeBlock}
@@ -154,44 +153,12 @@ const ticksEmptyLabel = isCorrupt
     ) : null
   }
 
-  {
-    !isEmpty && !isCorrupt && open.length === 0 && hiddenCount === 0 ? (
-      <p class="text-[0.9375rem] text-muted-foreground">
-        {isToday ? '今天的事项都划掉了。' : '这一天的事项都划掉了。'}
-      </p>
-    ) : null
-  }
-
-  {
-    done.length > 0 ? (
-      <details class="group mt-7">
-        <summary class="flex cursor-pointer list-none items-center gap-1.5 text-[0.8125rem] text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
-          <span class="inline-block transition-transform group-open:rotate-90" aria-hidden="true">
-            <ChevronRight size={13} stroke-width={2} />
-          </span>
-          {/*
-            这里的数字与页首刻度**有意不同**，不要「修」成一致的：
-            页首的 ProgressTicks 报的是全天总数（summary.total / summary.done），
-            而这个折叠组只数真正渲染出来的那一段（受 maxTasksPerPage 约束）。
-            只有超过单页上限时两者才会分开，而那时「页首说 100/205、折叠组说 98」
-            恰恰是准确的——前者是全天的账，后者是这一页上划得掉的账。
-            若改成同一口径，短页好看，长页就会撒谎。
-          */}
-          已完成 {done.length}
-        </summary>
-        <ul class="mt-2">
-          {done.map((task) => (
-            <TaskRow
-              task={task}
-              showTimeBlock={showTimeBlock}
-              showTags={showTags}
-              showPriority={showPriority}
-            />
-          ))}
-        </ul>
-      </details>
-    ) : null
-  }
+  {/*
+    这里原先还有一句「今天的事项都划掉了。」用来顶替空掉的主列表。
+    完成的事项现在就在上面的列表里，那句话只剩「这一天零任务」时才可能成立——
+    而那种情况已经由 EmptyState 说了「今天还没有写下任何事」（或「这一天没有留下任何记录」）。
+    同一件事说两遍、两种说法，只会互相打脸，所以整句删掉，不保留为死代码。
+  */}
 
   {/* 超出单页上限时如实告知，不静默截断。`cap` 为 `null` 表示未设上限，此句不会出现。 */}
   {
