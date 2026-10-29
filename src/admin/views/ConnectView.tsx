@@ -10,6 +10,7 @@ import { siteConfig } from '../../../site.config.ts';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+import { setActiveClient } from '../client-holder';
 import type { AdminAction, AdminState } from '../state/machine';
 
 /**
@@ -195,6 +196,8 @@ export function ConnectView({ state, dispatch, createClient = createGitHubClient
         // 验证通过 → 令牌才值得留在本机。
         saveStoredToken(candidate);
         setStoredTokenPresent(true);
+        // client 与令牌走同一条交接路径：后续「保存并发布」用的就是刚验证过的这个。
+        setActiveClient(client);
 
         const paths = await client.listDataPaths();
         const todayKey = todayInZone(siteConfig.site.timeZone);
@@ -290,6 +293,8 @@ export function ConnectView({ state, dispatch, createClient = createGitHubClient
 
   function handleClear(): void {
     clearStoredToken();
+    // client 里还留着旧令牌的引用，断开时必须一并清掉。
+    setActiveClient(null);
     setStoredTokenPresent(false);
     setWarnings([]);
     setToken('');

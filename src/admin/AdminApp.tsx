@@ -1,6 +1,8 @@
 import { CheckCircle2, CloudOff, Loader2, Lock, PencilLine } from 'lucide-react';
 import * as React from 'react';
 
+import { todayInZone } from '@/lib/date';
+import { GitHubError } from '@/lib/github';
 import { validateDay } from '@/lib/validate';
 import type { DayEntry } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -8,11 +10,14 @@ import { cn } from '@/lib/utils';
 import { siteConfig } from '../../site.config.ts';
 import { DayList } from './components/DayList';
 import { StatusBar } from './components/StatusBar';
+import { activeClient } from './client-holder';
+import { buildCommitMessage, buildPublishPayload } from './publish';
 import {
   adminReducer,
   hasUnsavedChanges,
   initialAdminState,
   loadWarningsOf,
+  type AdminAction,
   type AdminState,
 } from './state/machine';
 import { ConnectView } from './views/ConnectView';
@@ -39,18 +44,17 @@ import { deriveView, type View } from './view-state';
  * reducer 的 `days` 就是编辑器画面的唯一来源。
  *
  * 发布闸门：`dirty` 里每一天都要过 `validateDay()`，有不过的就把「保存并发布」
- * 挡住并列出原因（坏数据一旦发布，公开页面就得吃下它）。真实发布链路
- * （`PUBLISH_START` → commit → `PUBLISH_OK`/`FAIL`）由 Task 16 接线。
+ * 挡住并列出原因（坏数据一旦发布，公开页面就得吃下它）。`onPublish` 的链路：
+ * 状态收窄 → 校验/loadWarnings 双闸 → `PUBLISH_START` → `buildPublishPayload`
+ * （纯函数，见 `./publish.ts`）→ `commitChanges` → `PUBLISH_OK`（清 dirty、记下
+ * commit 链接）/ `PUBLISH_FAIL`（改动原样保留、红条提示）。client 由 `ConnectView`
+ * 验证令牌后放进 `./client-holder.ts` 的模块单例——reducer 保持纯函数，不碰网络。
  *
  * ## 数据为什么不可能从构建产物里漏出来
  *
  * `disconnected` 这个状态变体里**没有 `days` 字段**。数据唯一来源是 `ConnectView`
  * 调 `client.getFile()` 从 GitHub 仓库现读；读到了才能 `TOKEN_OK` 拿到 `ready`。
  * 构建时读的那份 `src/data/` 快照只喂给公开页面，后台一眼都看不到。
- *
- * ## 还剩下的占位块
- *
- * - Task 16 → `publishing` 换成提交进度，`onPublish` 接上真实发布链路。
  */
 
 const VIEW_LABEL: Record<View, string> = {
@@ -131,6 +135,7 @@ export default function AdminApp({ siteTitle }: { siteTitle: string }) {
           publishing={publishing}
           patchDay={patchDay}
           selectDay={selectDay}
+          dispatch={dispatch}
         />
       ) : null}
     </div>
@@ -146,29 +151,101 @@ function StatusIcon({ view }: { view: View }) {
 /**
  * `ready` / `publishing` 的编辑器：状态栏 + 日期列表 + 当天条目。
  *
- * 顺带把两类「必须让人看见的隐患」显示出来：`loadWarnings`（仓库里存在、
- * 这次却没能载入的日期）与 `state.error`（`TOKEN_FAIL` / `PUBLISH_FAIL` 按设计
- * 都停留在 `ready` 并只挂一条错误——不显示它就成了看不见的状态）。
+ * 顺带把三类「必须让人看见的隐患」显示出来：`loadWarnings`（仓库里存在、
+ * 这次却没能载入的日期）、`state.error`（`TOKEN_FAIL` / `PUBLISH_FAIL` 按设计
+ * 都停留在 `ready` 并只挂一条错误——不显示它就成了看不见的状态）、以及
+ * `lastCommit`（发布成功的 commit 链接，来自模块单例 client 的返回值）。
  */
 function LoadedEditor({
   state,
   publishing,
   patchDay,
   selectDay,
+  dispatch,
 }: {
   state: Extract<AdminState, { status: 'ready' | 'publishing' }>;
   publishing: boolean;
   patchDay: (day: DayEntry) => void;
   selectDay: (date: string) => void;
+  dispatch: React.Dispatch<AdminAction>;
 }) {
-  const repoLabel = (() => {
-    const { owner, repo, branch } = siteConfig.admin.github;
-    return `${owner}/${repo}@${branch}`;
-  })();
+  const { owner, repo, branch, commitMessage, authorName, authorEmail } = siteConfig.admin.github;
+  const repoLabel = `${owner}/${repo}@${branch}`;
+
+  /** 最近一次发布成功的 commit（htmlUrl 渲染成链接）。新一次发布开始 / 失败即清空。 */
+  const [lastCommit, setLastCommit] = React.useState<{ sha: string; htmlUrl: string } | null>(null);
 
   const invalidDays = invalidDaysOf(state);
   const loadWarnings = loadWarningsOf(state);
   const error = 'error' in state ? state.error : undefined;
+
+  const onPublish = React.useCallback(() => {
+    if (state.status !== 'ready') return;
+    // 第二道校验闸：按钮的 disabled 只是界面约束，真正的拦截在这里——
+    // 有未过校验的天时宁可原地报错，也绝不把坏数据发出去。
+    if (invalidDays.length > 0) {
+      dispatch({
+        type: 'PUBLISH_FAIL',
+        message: `${invalidDays.length} 天未通过校验（${invalidDays.join('、')}），修正后才能发布`,
+      });
+      return;
+    }
+    // 第三道闸：loadWarnings 的日期拒绝写入（覆盖读不出来的文件就是丢数据）。
+    // buildPublishPayload 是纯函数，在这里同步跑完；抛错就停在 ready，不进 publishing。
+    const todayKey = todayInZone(siteConfig.site.timeZone);
+    let payload;
+    try {
+      payload = buildPublishPayload({
+        days: state.days,
+        dirty: state.dirty,
+        todayKey,
+        dataCfg: { activeDir: siteConfig.data.activeDir, archiveDir: siteConfig.data.archiveDir },
+        afterMonths: siteConfig.data.archiveAfterMonths,
+        unavailableDates: new Set(loadWarnings.map((warning) => warning.date)),
+      });
+    } catch (caught) {
+      dispatch({
+        type: 'PUBLISH_FAIL',
+        message: caught instanceof Error ? caught.message : String(caught),
+      });
+      return;
+    }
+
+    let client;
+    try {
+      client = activeClient();
+    } catch (caught) {
+      dispatch({
+        type: 'PUBLISH_FAIL',
+        message: caught instanceof Error ? caught.message : String(caught),
+      });
+      return;
+    }
+
+    setLastCommit(null);
+    dispatch({ type: 'PUBLISH_START' });
+    client
+      .commitChanges({
+        writes: payload.writes,
+        deletes: payload.deletes,
+        message: buildCommitMessage(commitMessage, todayKey, payload.summary),
+        authorName,
+        authorEmail,
+      })
+      .then((result) => {
+        dispatch({ type: 'PUBLISH_OK' });
+        setLastCommit({ sha: result.commitSha, htmlUrl: result.htmlUrl });
+      })
+      .catch((caught) => {
+        // GitHubError 的消息已是完整中文句子（操作 + 状态码 + 处置建议），直接用；
+        // 其余异常（真 bug）才包一层「发布失败：」。
+        const message =
+          caught instanceof GitHubError
+            ? caught.message
+            : `发布失败：${caught instanceof Error ? caught.message : String(caught)}`;
+        dispatch({ type: 'PUBLISH_FAIL', message });
+      });
+  }, [state, invalidDays.length, loadWarnings, dispatch, commitMessage, authorName, authorEmail]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -178,14 +255,27 @@ function LoadedEditor({
         dirtyCount={state.dirty.size}
         errorCount={invalidDays.length}
         publishing={publishing}
-        onPublish={() => {
-          // Task 16 接线：PUBLISH_START → GitHub commit → PUBLISH_OK / PUBLISH_FAIL。
-        }}
+        onPublish={onPublish}
       />
+
+      {lastCommit !== null ? (
+        <p className="text-[0.8125rem] leading-relaxed text-muted-foreground" data-testid="last-commit">
+          已发布{' '}
+          <a
+            href={lastCommit.htmlUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-foreground underline underline-offset-2 hover:text-primary"
+          >
+            提交 {lastCommit.sha.slice(0, 7)}
+          </a>
+        </p>
+      ) : null}
 
       {/*
         仓库里存在、但这次没载入的日期必须说出来。少读了几天却只显示"读取了 N 天"，
-        用户会以为那就是全部——而仓库才是唯一真相。Task 16 的发布链路应当拒绝写入这些日期。
+        用户会以为那就是全部——而仓库才是唯一真相。这些日期同时进 buildPublishPayload
+        的 unavailableDates：dirty 若混进它们，发布在本地就被拒绝。
       */}
       {loadWarnings.length > 0 ? (
         <div role="alert" className="flex flex-col gap-1">

@@ -10,8 +10,9 @@ import { Button } from './ui/button';
  * 前两个是"没东西可发"，最后一个是"发了会写坏数据"，三者对用户是不同的话，
  * 所以校验失败时另给一句提示而不是只把按钮变灰。
  *
- * `onPublish` 的真实链路（`PUBLISH_START` → commit → `PUBLISH_OK`/`FAIL`）由 Task 16
- * 接线；本组件只负责 disabled 逻辑与回调，不关心回调背后是什么。
+ * `onPublish` 背后是完整发布链路（`PUBLISH_START` → `buildPublishPayload` →
+ * `commitChanges` → `PUBLISH_OK`/`FAIL`），接线在 `AdminApp.tsx`；本组件只负责
+ * disabled 逻辑与回调，不关心回调背后是什么。
  */
 
 export type StatusBarProps = {
