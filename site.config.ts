@@ -54,8 +54,8 @@ export const siteConfig = {
     sessionMinutes: 120,
     requirePasswordOnRefresh: false,
     github: {
-      owner: "maochenyu",
-      repo: "TODO",
+      owner: "maochenyu-me",
+      repo: "todo",
       branch: "main",
       dataPathPrefix: "",
       commitMessage: "chore(todo): {date} — {summary}",
