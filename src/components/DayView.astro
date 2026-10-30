@@ -86,6 +86,14 @@ const isEmpty = tasks.length === 0;
 const prevKey = addDays(dateKey, -1);
 const nextKey = addDays(dateKey, 1);
 
+/*
+ * 相邻那天的可链条件：磁盘上有记录，**或者那天就是今天**。
+ * 今天没有文件也一样是真实页面（`/`）——只认「有文件」的话，从昨天往回按「下一天」
+ * 会被置灰，读者越过今天写下的最后一条记录就回不到今天了。
+ */
+const prevIsToday = prevKey === todayKey;
+const nextIsToday = nextKey === todayKey;
+
 /** 「今天」的规范地址是 `/`；其余日期一律 `/date/<key>`，链接里不制造重复内容。 */
 function hrefOf(key: string): string {
   return key === todayKey ? withBase('/') : withBase(`/date/${key}`);
@@ -171,16 +179,18 @@ const ticksEmptyLabel = isCorrupt
 </section>
 
 <!--
-  底部翻阅：相邻两天在磁盘上有记录才是链接。
-  没有记录的那一侧渲染成 span —— 不可聚焦、不会被 TAB 走到、点了也没反应，
+  底部翻阅：相邻两天「有记录或就是今天」才是链接（今天的地址是 `/`，见上）。
+  不满足的那一侧渲染成 span —— 不可聚焦、不会被 TAB 走到、点了也没反应，
   但读屏仍能报出日期与「暂无记录」，读者知道那是哪一天、为什么点不动。
+  不是今天的日子在中间给一颗「回到今天」：翻进历史之后，出路不该依赖
+  读者记得顶栏上还有个「今天」。
 -->
 <nav
   aria-label="按日翻阅"
   class="mt-9 flex items-center justify-between gap-3 text-[0.8125rem]"
 >
   {
-    prevHasData ? (
+    prevHasData || prevIsToday ? (
       <a
         href={hrefOf(prevKey)}
         class="inline-flex items-center gap-0.5 text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
@@ -197,7 +207,17 @@ const ticksEmptyLabel = isCorrupt
     )
   }
   {
-    nextHasData ? (
+    !isToday ? (
+      <a
+        href={withBase('/')}
+        class="shrink-0 text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
+      >
+        回到今天
+      </a>
+    ) : null
+  }
+  {
+    nextHasData || nextIsToday ? (
       <a
         href={hrefOf(nextKey)}
         class="inline-flex items-center gap-0.5 text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"

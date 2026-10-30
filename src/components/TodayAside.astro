@@ -9,7 +9,7 @@
  * 文案口径注意：E2E 对首页有「已完成 N / M」的唯一性断言（主列表的刻度那一句），
  * 所以这里的数字一概**不**用「已完成」开头——措辞各自独立，避免撞车。
  */
-import { startOfWeekGrid, parseDateKey } from '../lib/date';
+import { formatYearMonth, startOfWeekGrid, parseDateKey } from '../lib/date';
 import { calendarDays, monthStart } from '../lib/months';
 import { streak, weeklyDone } from '../lib/stats';
 import { collectTags, hasTagPage, tagPath } from '../lib/tags';
@@ -21,17 +21,23 @@ interface Props {
   entries: DayEntry[];
   /** 「今天」的唯一依据，由页面按 `siteConfig.site.timeZone` 算好传进来。 */
   todayKey: string;
+  /**
+   * 迷你月历画哪个月：缺省是今天所在的月；单日页传**正在看的那天**所在的月，
+   * 让辅助栏跟内容走（看 2025-11 的某天，月历就该画 2025-11）。
+   * 「本周小结」始终以 `todayKey` 为准，与看的日期无关。
+   */
+  monthKey?: string;
   /** 传入的 class 追加在 aside 上（工作台两栏切换的响应式类由页面持有）。 */
   class?: string;
 }
 
-const { entries, todayKey, class: className } = Astro.props;
+const { entries, todayKey, monthKey: monthKeyProp, class: className } = Astro.props;
 
 const { weekStartsOn, tagRules } = siteConfig.frontend;
 
 /* ---------- 迷你月历：与 CalendarMonth 同一套网格算术 ---------- */
 
-const monthKey = todayKey.slice(0, 7);
+const monthKey = monthKeyProp ?? todayKey.slice(0, 7);
 const firstKey = monthStart(monthKey);
 const grid = startOfWeekGrid(firstKey, weekStartsOn);
 const monthDays = calendarDays(entries, monthKey, 0);
@@ -59,7 +65,9 @@ function dayHref(dateKey: string): string {
 
 <aside class:list={['grid gap-4 sm:grid-cols-3 sm:gap-5 xl:grid-cols-1 xl:gap-5', className]}>
   <section aria-labelledby="aside-month-heading" class="rounded-md border border-border bg-card p-4">
-    <h2 id="aside-month-heading" class="text-[0.8125rem] font-medium text-muted-foreground">本月</h2>
+    <h2 id="aside-month-heading" class="text-[0.8125rem] font-medium text-muted-foreground">
+      {formatYearMonth(firstKey)}
+    </h2>
     <div class="mt-3">
       <ul class="grid grid-cols-7 gap-x-0.5 pb-1" aria-hidden="true">
         {
@@ -109,7 +117,7 @@ function dayHref(dateKey: string): string {
       </ul>
     </div>
     <a
-      href={withBase('/calendar/')}
+      href={withBase(`/calendar/${monthKey}`)}
       class="mt-3 inline-block text-[0.75rem] text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
     >
       整月日历（{monthDays.length} 天有记录）

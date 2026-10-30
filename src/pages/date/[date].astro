@@ -16,6 +16,7 @@ import type { GetStaticPaths } from 'astro';
 
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import DayView from '../../components/DayView.astro';
+import TodayAside from '../../components/TodayAside.astro';
 import { loadAllEntries } from '../../lib/data';
 import { addDays, formatLong, isValidDateKey, todayInZone } from '../../lib/date';
 import { withBase } from '../../lib/urls';
@@ -71,14 +72,19 @@ const today = todayInZone(siteConfig.site.timeZone);
 
 // 今天另有一个规范地址 `/`，这里只是它的可渲染副本。
 const canonicalHref = dateKey === today ? withBase('/') : withBase(`/date/${dateKey}`);
+
+// 辅助栏（迷你月历 / 标签 / 本周小结）与今天页共用同一份组件与数据口径。
+// 每个日期页各读一遍全量数据：构建期成本可接受（页数量级是「有文件的天数」）。
+const { entries } = loadAllEntries(siteConfig.data.activeDir, siteConfig.data.archiveDir);
 ---
 
 <BaseLayout title={formatLong(dateKey)} activeNav="today" canonicalHref={canonicalHref}>
   {/*
-    单日页保持「读」的版式：限宽 52rem，任务行与元信息不至于在宽屏上被拉散。
-    今天页（`/`）是工作台两栏，这边是文章式单列——两者同构不同宽，各有说法。
+    与今天页同一个两栏工作台：单日页不再限宽单列——读者在这里同样需要
+    迷你月历（跳月）与标签（跳类目）。区别只有一点：迷你月历跟随**正在看的
+    这一天**所在的月份，而不是永远画今天那个月。
   */}
-  <div class="max-w-[52rem]">
+  <div class="xl:grid xl:grid-cols-[minmax(0,1fr)_18rem] xl:gap-x-10">
     <DayView
       dateKey={dateKey}
       entry={entry}
@@ -86,6 +92,12 @@ const canonicalHref = dateKey === today ? withBase('/') : withBase(`/date/${date
       prevHasData={prevHasData}
       nextHasData={nextHasData}
       todayKey={today}
+    />
+    <TodayAside
+      entries={entries}
+      todayKey={today}
+      monthKey={dateKey.slice(0, 7)}
+      class="mt-8 xl:mt-0"
     />
   </div>
 </BaseLayout>
