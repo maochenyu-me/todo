@@ -33,39 +33,59 @@ import { Monitor, Moon, Sun } from '@lucide/astro';
 <!--
   全站第二段、也是最后一段内联 JS：不加载任何外部脚本。
   点一下按 系统 → 明亮 → 暗黑 → 系统 循环，并写 localStorage["todo.theme"]。
+
+  **换肤是整页一次性动画**（View Transition + 从按钮扩散的圆形揭示），不是各元素
+  按自己的 transition 各变各的：不这么做的话，带 transition-colors 的链接会先变、
+  背景与边框会瞬变，看起来像页面在「局部刷新」。没有 View Transition 支持或用户
+  要求减少动效时，直接瞬时切换——动画是装饰，可用性优先。
+
+  圆形揭示的半径：取视口两边较大值 ×1.5（矩形最远角距离 ≤ max(宽,高) × √2 ≈ 1.42），
+  所以无论从哪儿点，圆都能盖满整屏。脚本里不写注释——内联脚本按字节算预算（<2000 B）。
 -->
 <script is:inline>
-  (function () {
-    var d = document.documentElement,
-      K = 'todo.theme',
-      m = matchMedia('(prefers-color-scheme:dark)'),
-      N = { system: 'light', light: 'dark', dark: 'system' };
-    function read() {
-      var v;
-      try {
-        v = localStorage.getItem(K);
-      } catch (e) {}
-      return v === 'light' || v === 'dark' ? v : 'system';
-    }
-    function apply() {
-      var t = read(),
-        k = t === 'dark' || (t === 'system' && m.matches);
-      d.dataset.theme = t;
-      d.classList.toggle('dark', k);
-      d.style.colorScheme = k ? 'dark' : 'light';
-    }
-    document.addEventListener('click', function (e) {
-      if (!e.target.closest('[data-theme-toggle]')) return;
-      try {
-        localStorage.setItem(K, N[read()]);
-      } catch (e) {}
-      apply();
-    });
-    m.addEventListener('change', function () {
-      if (read() === 'system') apply();
-    });
+(function () {
+  var d = document.documentElement,
+    K = 'todo.theme',
+    m = matchMedia('(prefers-color-scheme:dark)'),
+    R = matchMedia('(prefers-reduced-motion:reduce)'),
+    N = { system: 'light', light: 'dark', dark: 'system' };
+  function read() {
+    var v;
+    try { v = localStorage.getItem(K); } catch (e) {}
+    return v === 'light' || v === 'dark' ? v : 'system';
+  }
+  function apply() {
+    var t = read(), k = t === 'dark' || (t === 'system' && m.matches);
+    d.dataset.theme = t;
+    d.classList.toggle('dark', k);
+    d.style.colorScheme = k ? 'dark' : 'light';
+  }
+  function commit() {
+    try { localStorage.setItem(K, N[read()]); } catch (e) {}
     apply();
-  })();
+  }
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-theme-toggle]');
+    if (!b) return;
+    if (!document.startViewTransition || R.matches) return commit();
+    var r = b.getBoundingClientRect(),
+      x = r.left + r.width / 2, y = r.top + r.height / 2,
+      z = Math.max(x, innerWidth - x, y, innerHeight - y) * 1.5, v;
+    d.classList.add('tvt');
+    v = document.startViewTransition(commit);
+    v.ready.then(function () {
+      d.animate(
+        { clipPath: ['circle(0 ' + x + 'px ' + y + 'px)', 'circle(' + z + 'px at ' + x + 'px ' + y + 'px)'] },
+        { duration: 400, easing: 'ease-out', pseudoElement: '::view-transition-new(root)' },
+      );
+    });
+    v.finished.finally(function () { d.classList.remove('tvt'); });
+  });
+  m.addEventListener('change', function () {
+    if (read() === 'system') apply();
+  });
+  apply();
+})();
 </script>
 
 <style>

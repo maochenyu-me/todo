@@ -239,6 +239,11 @@ describe('性能不变量（零 JS 前提下的提速手段）', () => {
     }
   });
 
+  test('换肤动画的作用域样式在产物里（html.tvt 关掉默认交叉淡入）', () => {
+    // 只在 `html.tvt` 下关默认过渡，否则会把跨文档跳页的 150ms 淡入一起关掉。
+    expect(readAllPagesHtml()).toMatch(/html\.tvt::view-transition-new\(root\)/);
+  });
+
   /**
    * 预取目标必须**恰好等于**底部翻阅栏的链接集合。
    *

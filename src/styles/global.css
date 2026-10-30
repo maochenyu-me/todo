@@ -97,3 +97,18 @@
     animation: none !important;
   }
 }
+
+/*
+ * 换肤动画（与上面的**跨文档**过渡分开）：
+ * 点明暗开关时 `ThemeToggle` 用 `document.startViewTransition()` 做一次整页快照，
+ * 再用 WAAPI 给「新快照」画一个从按钮扩散的圆形揭示——所以这里是**关掉**默认的
+ * 交叉淡入，只留 JS 那一条 clip-path 动画。
+ *
+ * 为什么用 `html.tvt` 作用域：不加作用域会把跨文档跳页的 150ms 淡入也一起关掉
+ * （两条过渡共用 `::view-transition-*(root)` 这同一对伪元素）。
+ */
+html.tvt::view-transition-old(root),
+html.tvt::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
