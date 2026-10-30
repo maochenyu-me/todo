@@ -154,16 +154,17 @@ const trendPoints = trendHasData
  * 别的页面在窄屏上一个像素都没动，桌面只是整体居中。
  */
 const PROSE_MEASURE = 'max-w-[34rem]';
-const CHART_MEASURE = 'max-w-[42rem]';
+/** 图表不再自设上限：容器已是 72rem，画布 1000px 直接铺满主区。 */
+const CHART_MEASURE = '';
 /**
- * 图表画布的**构建期**宽度：42rem = 672px（16px 根字号）。
+ * 图表画布的**构建期**宽度：1000px。
  *
- * 为什么不用 CSS 把 `<svg>` 拉宽：拉宽会按比例放大轴文字（672/456 ≈ 1.47，柱底
- * 12px 的日期会变成 17.7px，比正文还大）。所以柱状图改的是**柱距**——`planBars()`
- * 把多出来的横向空间平摊给 12 个柱位，方块 8px、字号 12px 纹丝不动（见
- * `BAR_GEOMETRY` 与组件头的「宽屏」一节）。
+ * 为什么不用 CSS 把 `<svg>` 拉宽：拉宽会按比例放大轴文字。柱状图改的是**柱距**——
+ * `planBars()` 把多出来的横向空间平摊给 12 个柱位，方块 8px、字号 12px 纹丝不动；
+ * 折线图摊开的是 90 个采样点的步距，轴字也仍是 14px（`planLine` 的 `width`，
+ * 只加宽不缩窄）。窄屏上容器比画布窄，由两个组件的 `overflow-x-auto` 横向滚动兜底。
  */
-const CHART_CANVAS_WIDTH = 672;
+const CHART_CANVAS_WIDTH = 1000;
 
 /** 大数字：字大、行高压紧、等宽数字（两位百分数不会跳动，也不会与下面那行对不齐）。 */
 const BIG_NUMBER_CLASS =
@@ -177,7 +178,7 @@ const SECTION_NOTE_CLASS = 'mt-2 text-[0.8125rem] text-muted-foreground';
 const CHART_NOTE_CLASS = 'mt-2 text-[0.8125rem] text-muted-foreground';
 ---
 
-<BaseLayout title="统计" activeNav="stats" wide>
+<BaseLayout title="统计" activeNav="stats">
   {/*
     页首与全部说明文字锁在 34 字行宽（`PROSE_MEASURE`）；两张图各自那块放到
     图表行宽（`CHART_MEASURE`）。分隔线（`border-t`）画在 `<section>` 上，
@@ -304,7 +305,7 @@ const CHART_NOTE_CLASS = 'mt-2 text-[0.8125rem] text-muted-foreground';
           直线会被误读成「那段时间什么都没做」。
         */}
         <div class={`mt-3 ${CHART_MEASURE}`}>
-          <LineChart points={trendPoints} />
+          <LineChart points={trendPoints} width={CHART_CANVAS_WIDTH} />
         </div>
 
         <p class={`${CHART_NOTE_CLASS} ${PROSE_MEASURE}`}>

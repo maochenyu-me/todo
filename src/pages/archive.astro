@@ -128,35 +128,43 @@ function dayHref(dateKey: string): string {
                       <tr>
                         <th scope="col">日期</th>
                         <th scope="col">完成情况</th>
+                        <th scope="col">完成率</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {month.days.map((day) => (
-                        <tr class="border-b border-border/70 align-top">
-                          <th scope="row" class="w-[9.5rem] py-2.5 pr-3 text-left font-normal">
-                            <a
-                              href={dayHref(day.date)}
-                              class="tabular-nums text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
-                            >
-                              {formatMedium(day.date)}
-                            </a>
-                          </th>
-                          <td class="py-2.5">
-                            {/*
-                              `maxTicks` 只在这里传：归档页是「一屏扫很多天」的版面，
-                              一天几百条会把一行撑爆、把逐日扫视彻底毁掉。单日页不传，
-                              行为一点没变（那边本来就是「这一天的全部都在这一页上」）。
-                              被省掉的格数以 `+N` 紧凑标出，精确的 N/M 照常写在刻度下面。
-                            */}
-                            <ProgressTicks
-                              total={day.total}
-                              done={day.done}
-                              emptyLabel="没有条目"
-                              maxTicks={ARCHIVE_MAX_TICKS}
-                            />
-                          </td>
-                        </tr>
-                      ))}
+                      {month.days.map((day) => {
+                        const rate =
+                          day.total === 0 ? null : `${Math.round((day.done / day.total) * 100)}%`;
+                        return (
+                          <tr class="border-b border-border/70 align-top">
+                            <th scope="row" class="w-[9.5rem] py-2.5 pr-3 text-left font-normal">
+                              <a
+                                href={dayHref(day.date)}
+                                class="tabular-nums text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
+                              >
+                                {formatMedium(day.date)}
+                              </a>
+                            </th>
+                            <td class="py-2.5">
+                              {/*
+                                `maxTicks` 只在这里传：归档页是「一屏扫很多天」的版面，
+                                一天几百条会把一行撑爆、把逐日扫视彻底毁掉。单日页不传，
+                                行为一点没变（那边本来就是「这一天的全部都在这一页上」）。
+                                被省掉的格数以 `+N` 紧凑标出，精确的 N/M 照常写在刻度下面。
+                              */}
+                              <ProgressTicks
+                                total={day.total}
+                                done={day.done}
+                                emptyLabel="没有条目"
+                                maxTicks={ARCHIVE_MAX_TICKS}
+                              />
+                            </td>
+                            <td class="w-[4rem] py-2.5 text-right align-top tabular-nums text-[0.8125rem] text-muted-foreground">
+                              {rate ?? '—'}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

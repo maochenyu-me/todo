@@ -114,22 +114,21 @@ const ticksEmptyLabel = isCorrupt
 ---
 
 <!--
-  根元素包一层 div：本组件是**多根**模板（页首 / 列表 / 翻页），Astro 会把多根组件
-  摊平成父容器的直接子元素。放进两栏工作台的 grid（`xl:grid-cols-[1fr_18rem]`）时，
-  三个根加旁侧的 aside 会被当成**四个格子**分配——印章留在左列、任务表被甩到右列、
-  翻页横跨左列（实测踩过：截图里任务列表跑到右上角就是这个原因）。
-  包起来之后，整个 DayView 才是网格里的**一个**格子。
+  根元素包一层 div，同时它是 **shadcn Card**（rounded-lg border bg-card shadow-sm）：
+  一天 = 一张卡。本组件模板曾是多根（页首/列表/翻页），Astro 会把多根组件摊平成
+  父容器的直接子元素——进 grid 时会被当成多个格子（实测踩过：任务列表被甩到右列），
+  包一层之后整个 DayView 是布局里的**一个**元素。
 -->
-<div>
+<div class="rounded-lg border border-border bg-card shadow-sm">
   <!-- 页首：印章 ＋ 刻度，全部左对齐。印章是页面上唯一倾斜的东西。 -->
-  <header class="flex flex-wrap items-end gap-x-7 gap-y-5 pb-5">
+  <header class="flex flex-wrap items-end gap-x-7 gap-y-5 p-6 pb-5 sm:p-8 sm:pb-5">
   <DateStamp dateKey={dateKey} />
   <div class="pb-1.5">
     <ProgressTicks total={summary.total} done={summary.done} emptyLabel={ticksEmptyLabel} />
   </div>
 </header>
 
-<section aria-labelledby="day-heading">
+<section aria-labelledby="day-heading" class="px-6 sm:px-8">
   <h2 id="day-heading" class="sr-only">{isToday ? '今天的待办' : '这一天的待办'}</h2>
 
   {
@@ -187,7 +186,7 @@ const ticksEmptyLabel = isCorrupt
 </section>
 
 <!--
-  底部翻阅：相邻两天「有记录或就是今天」才是链接（今天的地址是 `/`，见上）。
+  卡片页脚：相邻两天「有记录或就是今天」才是链接（今天的地址是 `/`，见上）。
   不满足的那一侧渲染成 span —— 不可聚焦、不会被 TAB 走到、点了也没反应，
   但读屏仍能报出日期与「暂无记录」，读者知道那是哪一天、为什么点不动。
   不是今天的日子在中间给一颗「回到今天」：翻进历史之后，出路不该依赖
@@ -195,7 +194,7 @@ const ticksEmptyLabel = isCorrupt
 -->
 <nav
   aria-label="按日翻阅"
-  class="mt-9 flex items-center justify-between gap-3 text-[0.8125rem]"
+  class="mt-8 flex items-center justify-between gap-3 rounded-b-lg border-t border-border bg-muted/40 px-6 py-4 text-[0.8125rem] sm:px-8"
 >
   {
     prevHasData || prevIsToday ? (
