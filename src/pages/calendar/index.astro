@@ -17,7 +17,7 @@ import CalendarMonth from '../../components/CalendarMonth.astro';
 import { loadAllEntries } from '../../lib/data';
 import { formatYearMonth, todayInZone } from '../../lib/date';
 import {
-  calendarDays,
+  daysInMonth,
   latestDataMonth,
   monthNeighbors,
   monthStart,
@@ -43,7 +43,7 @@ const { prev, next } = monthNeighbors(months, latestMonthKey);
 <BaseLayout title={formatYearMonth(monthStart(latestMonthKey))} activeNav="calendar">
   <CalendarMonth
     monthKey={latestMonthKey}
-    days={calendarDays(entries, latestMonthKey)}
+    days={daysInMonth(entries, latestMonthKey)}
     todayKey={todayKey}
     weekStartsOn={weekStartsOn}
     prevMonthKey={prev}

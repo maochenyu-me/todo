@@ -139,28 +139,31 @@ const trendPoints = trendHasData
 /* ---------------- 排版常量：四块共用，改一处就够 ---------------- */
 
 /**
- * 两把尺子。这一页同时有「读的文字」与「看的图」，必须说清各自的理由：
+ * 两把尺子。这一页是站内唯一同时有两种「行宽」的页面，必须说清各自的理由：
  *
  * - `PROSE_MEASURE`：**正文**的度量——34 个汉字（spec §7.3），与全站其他页一致。
  *   页首、四个小标题、大数字下面那句、两张图下面那句，全部锁在这把尺子上；
  *   多一个字都不给，因为这几行是「读」的，不是「看」的。
- * - `CHART_MEASURE`：**图表**的度量——62.5rem（1000px）。布局层放开到 90rem 之后，
- *   672px 的图右边会空出一大片；1000px 让两张图吃满主区，又不至于在 1920 屏上
- *   把柱距摊得稀疏。
+ * - `CHART_MEASURE`：**图表**的度量——42rem（672px），正好是 lg 下整条主列的内容宽
+ *   （48rem 列 − 2×3rem 内边距）；md 下主列内容宽 704px，42rem 也装得下。
+ *   图不是散文：把 12 周柱状压进 34 字的行宽，换来的不是「好读」，而是右边一大片
+ *   空白加一堆挤在一起的小方块。
  *
- * 两把尺子都由**页面自己**持有。`BaseLayout` 只负责放开容器宽度，不再代管行宽。
+ * 两把尺子都由**页面自己**持有，`BaseLayout` 只负责把列的**上限**打开到 48rem
+ * （opt-in 的 `wide`，外层框架跟着放到 63rem 以保持居中），不改全站默认的 40rem。
+ * 别的页面在窄屏上一个像素都没动，桌面只是整体居中。
  */
 const PROSE_MEASURE = 'max-w-[34rem]';
-const CHART_MEASURE = 'max-w-[62.5rem]';
+const CHART_MEASURE = 'max-w-[42rem]';
 /**
- * 图表画布的**构建期**宽度：62.5rem = 1000px（16px 根字号）。
+ * 图表画布的**构建期**宽度：42rem = 672px（16px 根字号）。
  *
- * 为什么不用 CSS 把 `<svg>` 拉宽：拉宽会按比例放大轴文字。柱状图改的是**柱距**——
- * `planBars()` 把多出来的横向空间平摊给 12 个柱位，方块 8px、字号 12px 纹丝不动；
- * 折线图摊开的是 90 个采样点的步距，轴字也仍是 14px（见 `planLine` 的 `width`）。
- * 窄屏上容器比画布窄，由两个组件各自的 `overflow-x-auto` 横向滚动兜底。
+ * 为什么不用 CSS 把 `<svg>` 拉宽：拉宽会按比例放大轴文字（672/456 ≈ 1.47，柱底
+ * 12px 的日期会变成 17.7px，比正文还大）。所以柱状图改的是**柱距**——`planBars()`
+ * 把多出来的横向空间平摊给 12 个柱位，方块 8px、字号 12px 纹丝不动（见
+ * `BAR_GEOMETRY` 与组件头的「宽屏」一节）。
  */
-const CHART_CANVAS_WIDTH = 1000;
+const CHART_CANVAS_WIDTH = 672;
 
 /** 大数字：字大、行高压紧、等宽数字（两位百分数不会跳动，也不会与下面那行对不齐）。 */
 const BIG_NUMBER_CLASS =
@@ -174,13 +177,11 @@ const SECTION_NOTE_CLASS = 'mt-2 text-[0.8125rem] text-muted-foreground';
 const CHART_NOTE_CLASS = 'mt-2 text-[0.8125rem] text-muted-foreground';
 ---
 
-<BaseLayout title="统计" activeNav="stats">
+<BaseLayout title="统计" activeNav="stats" wide>
   {/*
     页首与全部说明文字锁在 34 字行宽（`PROSE_MEASURE`）；两张图各自那块放到
     图表行宽（`CHART_MEASURE`）。分隔线（`border-t`）画在 `<section>` 上，
     所以四条线的宽度一致、都到图表列右端——线不等长比线长短更刺眼。
-    总完成率与连续打卡是两个「结论」数字，md 起并排一行：结论先读完整，
-    图表（何以见得）仍然独占一整行铺开。
   */}
   <header class={`pb-5 ${PROSE_MEASURE}`}>
     <h1 class="text-[1.375rem] font-semibold tracking-[-0.01em] text-foreground">统计</h1>
@@ -192,7 +193,6 @@ const CHART_NOTE_CLASS = 'mt-2 text-[0.8125rem] text-muted-foreground';
     </p>
   </header>
 
-  <div class="grid gap-x-10 md:grid-cols-2 md:gap-x-16">
   {
     showCompletionRate ? (
       <section aria-labelledby="rate-heading" class="border-t border-border py-5">
@@ -256,7 +256,6 @@ const CHART_NOTE_CLASS = 'mt-2 text-[0.8125rem] text-muted-foreground';
       </section>
     ) : null
   }
-  </div>
 
   {/*
     趋势开关同时管两张图：柱状是「每周完成了多少件」，折线是「每天完成了多少成」，
@@ -272,8 +271,8 @@ const CHART_NOTE_CLASS = 'mt-2 text-[0.8125rem] text-muted-foreground';
 
         {/*
           图表块用更宽的度量。`CHART_CANVAS_WIDTH` 让柱距铺满整个图表列，而柱底字号
-          仍是 12px——加宽的是间距，不是字。窄屏上容器比画布窄，由 `BarSquares`
-          自己的 `overflow-x-auto` 横向滚动兜底。
+          仍是 12px——加宽的是间距，不是字（见 `stats.astro` 顶部与 `planBars()`）。
+          窄屏上容器比画布窄，由 `BarSquares` 自己的 `overflow-x-auto` 横向滚动兜底。
         */}
         <div class={`mt-3 ${CHART_MEASURE}`}>
           <BarSquares data={weekBars} width={CHART_CANVAS_WIDTH} />
@@ -294,16 +293,18 @@ const CHART_NOTE_CLASS = 'mt-2 text-[0.8125rem] text-muted-foreground';
         </div>
 
         {/*
-          折线图与柱状图同一口径：画布按 `CHART_CANVAS_WIDTH` 定宽、1:1 渲染，
-          轴字不随画布放大。窄屏不缩放，靠横向滚动看全——那段「只缩不放」的旧注
-          （320 画布在手机上等比缩到 0.42）换成了这套机制后整个不再成立：
-          现在手机上轴字永远是 14px，代价只是要滑一下。
+          折线图保持**自然宽度 320**，只占图表块的左边一段——这不是漏改，是硬约束：
+          它是「只缩不放」的，画布一加宽就两头不讨好。加到 672 时手机端（内容区 280px）
+          等比缩到 `280 / 672 = 0.42`，14px 的轴字只剩 5.8px；而手机端正是最需要读数的地方。
+          反过来给它 `w-full` 又会在桌面端把轴字放大成 20px 以上（比正文还大）。
+          所以这一块能变宽的只有**容器**，画布本身留在自然尺寸上。
+
           没有记录的日子是 0%，不是「断开」——`rollingRate` 就是这么给的，
           这条线因此能贴着底走完整段。这一点必须写在页面上，否则一段贴底的
           直线会被误读成「那段时间什么都没做」。
         */}
         <div class={`mt-3 ${CHART_MEASURE}`}>
-          <LineChart points={trendPoints} width={CHART_CANVAS_WIDTH} />
+          <LineChart points={trendPoints} />
         </div>
 
         <p class={`${CHART_NOTE_CLASS} ${PROSE_MEASURE}`}>

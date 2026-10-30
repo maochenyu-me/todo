@@ -28,15 +28,16 @@ const items = NAV_ITEMS.filter((item) => pages[item.key]);
 ---
 
 <!--
-  顶栏（取代旧版左检索栏）：sticky、1px 下边框、半透明模糊，全宽交给正文。
+  顶栏：sticky、1px 下边框、半透明模糊。
   桌面：品牌＋tagline 靠左，五个导航项横排（当前项的下划线压在顶栏边框上，
-  GitHub 标签页语汇），明暗切换贴右。
+  GitHub 标签页语汇），明暗切换贴右；内层与正文同为 40rem 居中，
+  品牌与导航和下方正文左对齐。
   窄屏：两行——品牌在左、明暗在右，导航收成第二排等宽检索标签，
-  当前那张标签下方压一道实线（与旧版窄屏形态一致，一个像素都不动）。
+  当前那张标签下方压一道实线（标签页语汇，不是装饰）。
   两种形态共用同一份 DOM，只靠 lg: 前缀切换。
 -->
 <header class="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur">
-  <div class="mx-auto max-w-[90rem] px-5 sm:px-8 lg:px-10">
+  <div class="mx-auto max-w-[40rem] px-5 sm:px-8 lg:px-12">
     <div
       class="flex flex-wrap items-center gap-x-4 py-2 lg:h-14 lg:flex-nowrap lg:gap-x-6 lg:py-0"
     >

@@ -7,8 +7,7 @@
  */
 import BaseLayout from '../layouts/BaseLayout.astro';
 import DayView from '../components/DayView.astro';
-import TodayAside from '../components/TodayAside.astro';
-import { dayFileState, loadAllEntries, readDayFromDisk } from '../lib/data';
+import { dayFileState, readDayFromDisk } from '../lib/data';
 import { addDays, todayInZone } from '../lib/date';
 import { siteConfig } from '../../site.config.ts';
 
@@ -27,30 +26,16 @@ const entry = readDayFromDisk(activeDir, archiveDir, today);
 // 相邻那天「有记录」既包括可读的一天，也包括坏文件——后者也有文件，点进去能看清明细。
 const prevHasData = dayFileState(activeDir, archiveDir, addDays(today, -1)) !== 'absent';
 const nextHasData = dayFileState(activeDir, archiveDir, addDays(today, 1)) !== 'absent';
-
-// 右手辅助栏（迷你月历 / 标签 / 本周小结）也要全量数据：坏文件照常不中断，但要喊出来。
-const { entries, errors } = loadAllEntries(activeDir, archiveDir);
-for (const error of errors) {
-  console.warn(`[今日页] 读取数据时出错，辅助栏会少掉这一部分：${error.path} —— ${error.message}`);
-}
 ---
 
 <!-- canonical 不需要在这里指定：`/` 是自己的规范地址，BaseLayout 按当前 pathname 拼即可。 -->
 <BaseLayout title="今天" activeNav="today">
-  {/*
-    两栏工作台（xl 起）：左边任务主区，右边 18rem 辅助栏——迷你月历 + 标签 + 本周小结。
-    lg～xl 之间单列，辅助栏折到主区下方排成三张并排的卡；窄屏（<sm）逐张竖排。
-    主区与辅助栏之间的分隔不画线：卡片自己的边框已经把边界说清了。
-  */}
-  <div class="xl:grid xl:grid-cols-[minmax(0,1fr)_18rem] xl:gap-x-10">
-    <DayView
-      dateKey={today}
-      entry={entry}
-      corrupt={state === 'corrupt'}
-      prevHasData={prevHasData}
-      nextHasData={nextHasData}
-      todayKey={today}
-    />
-    <TodayAside entries={entries} todayKey={today} class="mt-8 xl:mt-0" />
-  </div>
+  <DayView
+    dateKey={today}
+    entry={entry}
+    corrupt={state === 'corrupt'}
+    prevHasData={prevHasData}
+    nextHasData={nextHasData}
+    todayKey={today}
+  />
 </BaseLayout>

@@ -18,19 +18,6 @@ import type { DayEntry } from './types';
 /** 月历格子与归档表里的一天：只有展示所需的三个数，**不含任何任务标题**。 */
 export type MonthDay = { date: string; total: number; done: number };
 
-/**
- * 月历格子里的一天：`MonthDay` 再加上**格子内能露出的任务标题**。
- *
- * 归档页的性能护栏（产物 HTML 不许出现任务标题）只落在 `groupByYearMonth` /
- * `daysInMonth` 的返回类型上——那两个函数的结构里根本没有 `previews` 字段，
- * 标题进不了归档表。月历页没有这条护栏（格子本来就是「这一天写了什么」的入口），
- * 所以预览单独放在这个类型里，两个口径互不污染。
- */
-export type CalendarDay = MonthDay & { previews: string[] };
-
-/** 月历格子里一天最多露出的任务标题条数。超出部分由格子里的「还有 N 条」承接。 */
-export const CALENDAR_PREVIEWS = 2;
-
 /** 归档表的一组：某月以及该月有记录的那些天。 */
 export type MonthGroup = { monthKey: string; days: MonthDay[] };
 
@@ -111,34 +98,6 @@ export function daysInMonth(entries: DayEntry[], monthKey: string): MonthDay[] {
     if (monthKeyOf(entry.date) !== monthKey) continue;
     const summary = daySummary(entry);
     days.push({ date: entry.date, total: summary.total, done: summary.done });
-  }
-  days.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  return days;
-}
-
-/**
- * 月历页用的格子数据：`daysInMonth` 再加上每天**前几条任务标题**（`CALENDAR_PREVIEWS` 条）。
- *
- * 标题取数据文件里的原始顺序，不重排：格子是入口不是清单，读者要的是「这天大概写了什么」，
- * 完整的一天点进去看。预览条数是版面决定（格子只有几十像素高），不是数据截断——
- * 精确的 `done / total` 照常在格子里，多写的天数不会丢。
- */
-export function calendarDays(
-  entries: DayEntry[],
-  monthKey: string,
-  previewCount: number = CALENDAR_PREVIEWS,
-): CalendarDay[] {
-  const take = Number.isFinite(previewCount) ? Math.max(0, Math.floor(previewCount)) : 0;
-  const days: CalendarDay[] = [];
-  for (const entry of entries) {
-    if (monthKeyOf(entry.date) !== monthKey) continue;
-    const summary = daySummary(entry);
-    days.push({
-      date: entry.date,
-      total: summary.total,
-      done: summary.done,
-      previews: entry.tasks.slice(0, take).map((task) => task.title),
-    });
   }
   days.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   return days;

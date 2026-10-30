@@ -18,9 +18,14 @@ interface Props {
    * 否则同一份内容有两个可索引的 URL。其余页面留空，按当前 pathname 自己算。
    */
   canonicalHref?: string;
+  /**
+   * 主列上限从 40rem 放宽到 48rem，只给 `/stats`：两张图是构建期定宽的 672px，
+   * 塞进 40rem 列会被压成窄带。正文行宽由页面自己的 `PROSE_MEASURE` 守住。
+   */
+  wide?: boolean;
 }
 
-const { title, description = siteConfig.site.tagline, activeNav, canonicalHref } = Astro.props;
+const { title, description = siteConfig.site.tagline, activeNav, canonicalHref, wide } = Astro.props;
 
 const pageTitle = title ? `${title}｜${siteConfig.site.title}` : siteConfig.site.title;
 // canonical 由 site.url + 当前 pathname 拼出。pathname 已含 base，
@@ -58,13 +63,16 @@ const canonical = new URL(canonicalHref ?? Astro.url.pathname, siteConfig.site.u
     >
     <TopBar activeNav={activeNav} />
     {/*
-      全宽工作台容器：`max-w-[90rem]`（1440px）封顶、居中，1920 屏左右各只留 240px。
-      行宽护栏不再由布局层代管——「读」的文字由各页自己持度量（如 stats 的
-      `PROSE_MEASURE` 34 字行宽），这里只负责把可用宽度放开。
+      居中的窄版面：缺省 40rem（lg 下内容宽 34 个汉字，spec §7.3 的行宽约束），
+      `wide` 打开放到 48rem（目前只有 /stats，为了两张 672px 的图）。
+      顶栏全宽、正文居中——左右留白是有意的：这是「簿纸」，不是工作台。
     */}
     <main
       id="main"
-      class="mx-auto w-full max-w-[90rem] px-5 pb-14 pt-6 sm:px-8 lg:px-10 lg:pt-8"
+      class:list={[
+        'mx-auto w-full min-w-0 px-5 pb-16 pt-8 sm:px-8 lg:px-12 lg:pt-10',
+        wide ? 'max-w-[48rem]' : 'max-w-[40rem]',
+      ]}
     >
       <slot />
     </main>

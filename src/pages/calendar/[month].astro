@@ -19,7 +19,7 @@ import CalendarMonth from '../../components/CalendarMonth.astro';
 import type { DayCell } from '../../components/CalendarMonth.astro';
 import { loadAllEntries } from '../../lib/data';
 import { formatYearMonth, todayInZone } from '../../lib/date';
-import { calendarDays, latestDataMonth, monthNeighbors, monthStart, monthsWithPages } from '../../lib/months';
+import { daysInMonth, latestDataMonth, monthNeighbors, monthStart, monthsWithPages } from '../../lib/months';
 import { withBase } from '../../lib/urls';
 import { siteConfig } from '../../../site.config.ts';
 
@@ -39,7 +39,7 @@ export const getStaticPaths = (() => {
     params: { month: monthKey },
     props: {
       monthKey,
-      days: calendarDays(entries, monthKey),
+      days: daysInMonth(entries, monthKey),
       todayKey,
       latestMonthKey,
       months,

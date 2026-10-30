@@ -20,30 +20,17 @@ interface Props {
   tags: TagCount[];
   /** 当前所在标签；索引里对应的那一项标成 `aria-current="page"`。 */
   currentTag?: string;
-  /**
-   * 排布形态：`inline`（缺省）是一排横排的标签链接，用于 `/tags` 索引页；
-   * `column` 是竖排窄列，用于 `/tags/[tag]` 的侧栏——同一批链接、同一个顺序，
-   * 只是排法不同。两处共用一份 DOM 生成逻辑，顺序不可能分叉。
-   */
-  layout?: 'inline' | 'column';
 }
 
-const { tags, currentTag, layout = 'inline' } = Astro.props;
+const { tags, currentTag } = Astro.props;
 
 /** 两处共用的排版（可点与不可点只差 hover 与下划线）。 */
 const ITEM_CLASS = 'inline-flex items-baseline gap-1 text-[0.875rem]';
 ---
 
-<nav
-  aria-labelledby="tag-index-heading"
-  class:list={[layout === 'column' ? 'lg:sticky lg:top-20' : 'pb-7']}
->
+<nav aria-labelledby="tag-index-heading" class="pb-7">
   <h2 id="tag-index-heading" class="pb-2 text-[0.8125rem] text-muted-foreground">全部标签</h2>
-  <ul
-    class:list={[
-      layout === 'column' ? 'flex flex-col items-start gap-y-1.5' : 'flex flex-wrap gap-x-4 gap-y-1.5',
-    ]}
-  >
+  <ul class="flex flex-wrap gap-x-4 gap-y-1.5">
     {
       tags.map(({ tag, count }) => {
         const isCurrent = tag === currentTag;
