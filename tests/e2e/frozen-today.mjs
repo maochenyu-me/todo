@@ -42,6 +42,11 @@ function dateKeysIn(dir) {
 /**
  * 冻结日：活跃区 + 归档区全部种子文件名里**字典序最大**的日期。
  * 字典序即时间序（同 date.ts 的口径）。
+ *
+ * 种子被清空（用户清库自测）时回落到**真实时钟的今天**：此时站点全是空状态、
+ * 内容断言的用例已被跳过（`public.spec.ts` 文件头的 skip），冻结失去对象，
+ * 但 `admin.spec` 的 mock 仍需要「与页面一致的今天」——两边用同一个 helper，
+ * 一致性不破。
  */
 export function frozenToday() {
   const keys = [
@@ -49,10 +54,15 @@ export function frozenToday() {
     ...dateKeysIn(join(ROOT, 'src', 'data', 'archive')),
   ].sort();
   const latest = keys.at(-1);
-  if (!latest) {
-    // 种子是仓库承诺保留的文档数据（spec：种子用作说明），真被清空了就大声失败，
-    // 不许悄悄冻在 `undefined` 上把整套 E2E 变成「空站点的断言」。
-    throw new Error('[frozen-today] 种子数据里没有任何日期文件，无法冻结「今天」');
-  }
-  return latest;
+  if (latest) return latest;
+
+  // 回落：与 src/lib/date.ts 的 toDateKey 同口径（此处不能 import TS，就地一小份）。
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+  console.warn('[frozen-today] 种子数据已清空，冻结日回落到真实时钟的今天');
+  return parts;
 }

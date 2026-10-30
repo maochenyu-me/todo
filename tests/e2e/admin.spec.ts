@@ -66,8 +66,8 @@ function seedFiles(): Map<string, string> {
 /** 装好 mock 并打开后台。返回可变的假仓库状态（用来改状态码、读调用记录）。 */
 async function setupAdmin(page: Page): Promise<FakeRepo> {
   const repo = createFakeRepo({
-    owner: 'maochenyu',
-    repo: 'TODO',
+    owner: 'maochenyu-me',
+    repo: 'todo',
     branch: 'main',
     files: seedFiles(),
   });
@@ -149,7 +149,7 @@ test.describe('③ 假 token → ready（Tree + 活跃区文件 + 分支名）',
     await waitForView(page, 'ready');
 
     // 目标仓库与分支是连接的第一证据。
-    await expect(page.getByLabel('发布状态')).toContainText('maochenyu/TODO@main');
+    await expect(page.getByLabel('发布状态')).toContainText('maochenyu-me/todo@main');
     // 令牌过期日来自响应头 `github-authentication-token-expiration`——这一条同时
     // 证明 CORS 的 `expose-headers` 与 `verify()` 的读头逻辑都通了。
     await expect(page.getByLabel('发布状态')).toContainText('令牌有效期至 2027-01-01');
@@ -193,7 +193,9 @@ test.describe('④ 三处编辑 → 计数反映三处改动', () => {
 
     // 三处改动都还在（不是只记住了"有改动"这件事）。
     // 逐天回查：编辑器只渲染当前选中的那一天，所以必须切回去看。
-    await selectDay(page, '10月29日');
+    // 今天那天的按钮文字从 TODAY 动态拼（TODAY 随真实时钟走，别写死）。
+    const todayLabel = `${Number(TODAY.slice(5, 7))}月${Number(TODAY.slice(8, 10))}日`;
+    await selectDay(page, todayLabel);
     await expect(page.getByRole('listitem').filter({ hasText: '把发布流程再走一遍' })).toBeVisible();
     await selectDay(page, '10月28日');
     await expect(checkboxOf(page, '买齐下周的早餐食材')).toBeChecked();

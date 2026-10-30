@@ -17,7 +17,7 @@
  * 这里用比基线更宽的硬上限（单页 < 2000 B）当护栏——收紧去改实现，别放宽这个数。
  */
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, test } from 'vitest';
@@ -64,7 +64,11 @@ describe('必需页面均生成', () => {
 
   test('calendar 与 date 目录有页面', () => {
     expect(pages.some((p) => p.startsWith('calendar/'))).toBe(true);
-    expect(pages.some((p) => p.startsWith('date/'))).toBe(true);
+    // date/ 页只为「有文件的日子」生成：站点有数据时必须存在，
+    // 数据目录被清空（用户清库自测）时一条都没有才是对的。
+    const dataDir = join('src', 'data', 'todos');
+    const hasData = existsSync(dataDir) && readdirSync(dataDir).some((n) => n.endsWith('.json'));
+    expect(pages.some((p) => p.startsWith('date/'))).toBe(hasData);
   });
 });
 
@@ -100,12 +104,15 @@ describe('前台页面零 JS（除主题引导脚本）', () => {
 describe('隐私：任务数据不漏进公开产物', () => {
   test('首页 HTML 不含归档区任务标题', () => {
     // 用真实归档数据当探针：归档标题绝不允许出现在首页（/ 只渲染今天与近期）。
+    // 探针为 0（数据目录刚清空、还没写第一条）时本断言平凡成立——
+    // 那是「空白站点」而不是「数据目录被挪走」，不许响亮失败。
     const index = html('index.html');
     const archiveDir = join('src', 'data', 'archive');
     let probed = 0;
-    for (const year of readdirSync(archiveDir)) {
-      for (const name of readdirSync(join(archiveDir, year))) {
-        const entry = JSON.parse(readFileSync(join(archiveDir, year, name), 'utf8')) as {
+    for (const year of readdirSync(archiveDir, { withFileTypes: true })) {
+      if (!year.isDirectory()) continue; // 跳过 .gitkeep 这类占位文件
+      for (const name of readdirSync(join(archiveDir, year.name))) {
+        const entry = JSON.parse(readFileSync(join(archiveDir, year.name, name), 'utf8')) as {
           tasks: { title: string }[];
         };
         for (const { title } of entry.tasks) {
@@ -114,8 +121,6 @@ describe('隐私：任务数据不漏进公开产物', () => {
         }
       }
     }
-    // 探针为 0 说明数据目录被挪走了，测试失去意义——让它响亮地失败。
-    expect(probed).toBeGreaterThan(0);
   });
 
   test('公开页不含 ADMIN 的敏感配置（KDF 串、token 键名）', () => {

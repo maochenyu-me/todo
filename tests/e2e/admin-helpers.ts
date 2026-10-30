@@ -48,7 +48,7 @@ export async function waitForView(page: Page, view: AdminView): Promise<void> {
  * 首次导航之后用 `page.evaluate`，而这里根本不需要清。）
  */
 export async function openAdmin(page: Page): Promise<void> {
-  await page.goto('/admin/');
+  await page.goto('/todo/admin/');
 }
 
 /** 输口令并解锁，等到 `disconnected`。 */

@@ -66,7 +66,8 @@ export default defineConfig({
   ],
   webServer: {
     command: 'node scripts/e2e-server.mjs',
-    url: BASE_URL,
+    // basePath='/todo' 下根路径 404，探活必须打站点前缀（见 site.config.ts basePath）。
+    url: `${BASE_URL}/todo/`,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
     stdout: 'pipe',

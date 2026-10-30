@@ -26,13 +26,16 @@ import { expect, test, type Page } from '@playwright/test';
 const OUT_DIR = join(process.cwd(), 'docs', 'superpowers', 'screenshots');
 
 /** 六条核心路径。标签页挑一个真实存在的种子标签。 */
+/** 站内导航统一走 SITE_BASE（basePath='/' 会是空串）：构建产物挂在 /todo 前缀下。 */
+const SITE_BASE = '/todo';
+
 const PAGES: { name: string; path: string }[] = [
-  { name: 'home', path: '/' },
-  { name: 'archive', path: '/archive/' },
-  { name: 'calendar', path: '/calendar/' },
-  { name: 'tags', path: '/tags/%E4%BC%9A%E8%AE%AE' },
-  { name: 'stats', path: '/stats/' },
-  { name: 'admin', path: '/admin/' },
+  { name: 'home', path: `${SITE_BASE}/` },
+  { name: 'archive', path: `${SITE_BASE}/archive/` },
+  { name: 'calendar', path: `${SITE_BASE}/calendar/` },
+  { name: 'tags', path: `${SITE_BASE}/tags/` },
+  { name: 'stats', path: `${SITE_BASE}/stats/` },
+  { name: 'admin', path: `${SITE_BASE}/admin/` },
 ];
 
 const VIEWPORTS: { name: string; width: number; height: number }[] = [
@@ -98,7 +101,7 @@ for (const viewport of VIEWPORTS) {
 test('prefers-reduced-motion 下首页无过渡', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('/');
+  await page.goto(`${SITE_BASE}/`);
   await expect(page.locator('body')).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({
