@@ -67,3 +67,33 @@
     -webkit-font-smoothing: antialiased;
   }
 }
+
+/*
+ * 跨文档视图过渡：点链接整页跳转时，浏览器自己做一次 150ms 交叉淡入，**不需要任何脚本**
+ * （Chrome/Edge 126+、Safari 18.2+；其余浏览器静默退化成现在的瞬时跳转，不报错、不影响可用性）。
+ *
+ * 这是「无刷新感」在零 JS 约束下的上限：能拿到的只有转场动画与视觉连续性，
+ * 拿不到的是「不重新请求文档」。也正因如此，本项目不引 swup / ClientRouter——
+ * 那类 JS 路由器和「公开页零 JS」的硬护栏正面冲突。
+ *
+ * 顶栏单独命名（`view-transition-name: topbar`，见 TopBar）：它两页都在、内容相同，
+ * 让它原地不动、只有正文淡入，观感才像「换了一页」而不是「重画了一遍」。
+ */
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 150ms;
+  animation-timing-function: ease-out;
+}
+
+/* 减少动效：整套关掉（不是缩短）。过渡动画属于装饰，可访问性优先。 */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}

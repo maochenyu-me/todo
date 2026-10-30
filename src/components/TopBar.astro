@@ -33,7 +33,9 @@ const items = NAV_ITEMS.filter((item) => pages[item.key]);
   导航是药丸 tab：当前项 bg-muted（shadcn 的 Tabs / 触发器语汇），不是下划线。
   窄屏：品牌 + 明暗一行，导航折到第二行（药丸横向排列，允许换行）。
 -->
-<header class="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur">
+<header
+  class="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur [view-transition-name:topbar]"
+>
   <div class="mx-auto flex max-w-6xl flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 sm:px-6 lg:h-14 lg:flex-nowrap lg:py-0">
     <a
       href={withBase('/')}

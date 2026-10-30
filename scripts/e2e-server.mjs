@@ -20,7 +20,7 @@
  * 于是整套用例跑在一份谁也没构建过的旧产物上。
  */
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -76,6 +76,17 @@ build.on('exit', (code) => {
   console.log(
     `[e2e-server] 构建完成（今天冻结在种子最新日 ${FROZEN_TODAY}），启动预览服务 http://127.0.0.1:${PORT}`,
   );
+  // `astro build` 本身不含剥注释那一段（它在 package.json 的 build 串里）。
+  // 这里补跑一次，保证 E2E 跑的就是线上同款产物。
+  const strip = spawnSync(process.execPath, [join(ROOT, 'scripts', 'strip-html-comments.mjs')], {
+    cwd: ROOT,
+    stdio: 'inherit',
+  });
+  if (strip.status !== 0) {
+    console.error('[e2e-server] 剥注释失败，不启动预览服务');
+    shutdown(strip.status ?? 1);
+    return;
+  }
   // `--host 127.0.0.1`：astro preview 默认只听 `localhost`，而 `localhost` 在 Windows 上
   // 可能解析到 `::1`。Playwright 的健康检查打的是 `127.0.0.1`，两者不是同一个地址，
   // 服务明明起来了健康检查却一直超时（实测踩过：报"Timed out waiting from config.webServer"，

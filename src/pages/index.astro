@@ -9,6 +9,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import DayView from '../components/DayView.astro';
 import { dayFileState, readDayFromDisk } from '../lib/data';
 import { addDays, todayInZone } from '../lib/date';
+import { dayNav, prefetchTargets } from '../lib/day-nav';
 import { siteConfig } from '../../site.config.ts';
 
 const { activeDir, archiveDir } = siteConfig.data;
@@ -26,10 +27,13 @@ const entry = readDayFromDisk(activeDir, archiveDir, today);
 // 相邻那天「有记录」既包括可读的一天，也包括坏文件——后者也有文件，点进去能看清明细。
 const prevHasData = dayFileState(activeDir, archiveDir, addDays(today, -1)) !== 'absent';
 const nextHasData = dayFileState(activeDir, archiveDir, addDays(today, 1)) !== 'absent';
+
+// 预取：与底部翻阅同一份判定（`dayNav`），只取真实存在的目标。
+const nav = dayNav({ dateKey: today, todayKey: today, prevHasData, nextHasData });
 ---
 
 <!-- canonical 不需要在这里指定：`/` 是自己的规范地址，BaseLayout 按当前 pathname 拼即可。 -->
-<BaseLayout title="今天" activeNav="today">
+<BaseLayout title="今天" activeNav="today" prefetch={prefetchTargets(nav)}>
   <DayView
     dateKey={today}
     entry={entry}

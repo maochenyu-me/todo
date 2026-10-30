@@ -18,6 +18,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 import DayView from '../../components/DayView.astro';
 import { loadAllEntries } from '../../lib/data';
 import { addDays, formatLong, isValidDateKey, todayInZone } from '../../lib/date';
+import { dayNav, prefetchTargets } from '../../lib/day-nav';
 import { withBase } from '../../lib/urls';
 import { siteConfig } from '../../../site.config.ts';
 
@@ -71,9 +72,17 @@ const today = todayInZone(siteConfig.site.timeZone);
 
 // 今天另有一个规范地址 `/`，这里只是它的可渲染副本。
 const canonicalHref = dateKey === today ? withBase('/') : withBase(`/date/${dateKey}`);
+
+// 预取：与底部翻阅同一份判定（`dayNav`）。
+const nav = dayNav({ dateKey, todayKey: today, prevHasData, nextHasData });
 ---
 
-<BaseLayout title={formatLong(dateKey)} activeNav="today" canonicalHref={canonicalHref}>
+<BaseLayout
+  title={formatLong(dateKey)}
+  activeNav="today"
+  canonicalHref={canonicalHref}
+  prefetch={prefetchTargets(nav)}
+>
   <DayView
     dateKey={dateKey}
     entry={entry}

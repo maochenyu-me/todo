@@ -43,6 +43,9 @@ function allHtml(dir = dist, prefix = ''): string[] {
 
 const pages = allHtml();
 const html = (rel: string) => readFileSync(join(dist, rel), 'utf8');
+
+/** 把所有公开页拼在一起——用于断言「全站级」的样式/脚本形态（如内联 CSS）。 */
+const readAllPagesHtml = () => pages.map((rel) => html(rel)).join('\n');
 const scriptsOf = (source: string) => source.match(/<script\b[\s\S]*?<\/script>/g) ?? [];
 
 /** 公开页 = dist 下所有 HTML；admin 是私人工具，单独一组断言。 */
@@ -101,8 +104,7 @@ describe('前台页面零 JS（除主题引导脚本）', () => {
   });
 });
 
-describe('隐私：任务数据不漏进公开产物', () => {
-  test('首页 HTML 不含归档区任务标题', () => {
+describe('隐私：任务数据不漏进公开产物', () => {  test('首页 HTML 不含归档区任务标题', () => {
     // 用真实归档数据当探针：归档标题绝不允许出现在首页（/ 只渲染今天与近期）。
     // 探针为 0（数据目录刚清空、还没写第一条）时本断言平凡成立——
     // 那是「空白站点」而不是「数据目录被挪走」，不许响亮失败。
@@ -197,6 +199,73 @@ describe('canonical 与 base 前缀', () => {
 
       for (const path of roots) {
         expect(path.startsWith(`${baseNoSlash}/`), `${rel} 的站内路径没带 base：${path}`).toBe(true);
+      }
+    }
+  });
+});
+
+describe('性能不变量（零 JS 前提下的提速手段）', () => {
+  const baseNoSlash = siteConfig.site.basePath.replace(/\/+$/, '');
+
+  /**
+   * 构建后必须剥掉普通注释。
+   *
+   * `scripts/strip-html-comments.mjs` 是 `npm run build` 的第二段；这条断言盯的是
+   * 「它有没有真的跑过」。公开页不含任何 Astro 水合标记，所以残留注释必须是 0；
+   * admin 因为 React 岛屿带 `<!--astro:end-->`，只允许 astro 开头的那些。
+   */
+  test('产物 HTML 里没有普通注释残留（astro 水合标记除外）', () => {
+    for (const rel of [...publicPages, 'admin/index.html']) {
+      const comments = html(rel).match(/<!--[\s\S]*?-->/g) ?? [];
+      const leaked = comments.filter((comment) => !/^<!--\s*astro/i.test(comment));
+      expect(leaked, `${rel} 残留注释：${leaked.slice(0, 2).join(' / ')}`).toEqual([]);
+    }
+  });
+
+  test('全局 CSS 含跨文档视图过渡（零 JS 的无刷新感）', () => {
+    // CSS 现在是内联的（`build.inlineStylesheets: 'always'`），所以从页面里读，
+    // 而不是从 `_astro/*.css` 读。
+    const html = readAllPagesHtml();
+    expect(html).toContain('@view-transition');
+    // 减少动效必须整套关掉，而不是只缩短时长。
+    expect(html).toMatch(/prefers-reduced-motion/);
+  });
+
+  test('CSS 内联：公开页没有外链样式表，且内联样式带着设计令牌', () => {
+    for (const rel of publicPages) {
+      const source = html(rel);
+      expect(source, `${rel} 仍有外链样式表`).not.toMatch(/<link[^>]+rel="stylesheet"/);
+      expect(source, `${rel} 没有内联样式`).toMatch(/<style>[\s\S]*--background/);
+    }
+  });
+
+  /**
+   * 预取目标必须**恰好等于**底部翻阅栏的链接集合。
+   *
+   * 两边都走 `lib/day-nav.ts` 的同一份判定，所以这条是「同一份判定被用了两次」的
+   * 结构性证明：多了就是预取一个点不到的目标（浪费带宽/打 404），少了就是点了没预取。
+   * 不写死日期，也不假设必须有预取——孤立的一天（前后无记录、自己就是今天）本来
+   * 就没有任何可点的相邻日，那时两个集合都是空。
+   */
+  test('单日页的预取目标 === 翻阅栏链接集合（同一份 dayNav）', () => {
+    const dayPages = pages.filter((rel) => rel.startsWith('date/'));
+    if (dayPages.length === 0) return;
+
+    for (const rel of dayPages) {
+      const source = html(rel);
+      const pager = source.match(/<nav[^>]*aria-label="按日翻阅"[\s\S]*?<\/nav>/)?.[0] ?? '';
+      expect(pager, `${rel} 没有翻阅栏`).not.toBe('');
+
+      const pagerHrefs = [...pager.matchAll(/href="([^"]+)"/g)].map((m) => m[1]!).sort();
+      const prefetchHrefs = [...source.matchAll(/<link rel="prefetch" href="([^"]+)"/g)]
+        .map((m) => m[1]!)
+        .sort();
+
+      expect(prefetchHrefs, `${rel} 的预取与翻阅栏不一致`).toEqual(pagerHrefs);
+
+      for (const href of prefetchHrefs) {
+        expect(href.startsWith(`${baseNoSlash}/`), `${rel} 预取没带 base：${href}`).toBe(true);
+        expect(href).not.toBe('');
       }
     }
   });

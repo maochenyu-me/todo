@@ -200,6 +200,33 @@ npm run check      # 类型检查（astro check）
 
 ---
 
+## 性能
+
+公开页的约定没变：**零外链 JS、内联脚本 ≤2 段、无字体、无图片、无第三方**。
+在此基础上做了四件事，前三件已落地，第四件留了可复现的探针：
+
+| 手段 | 做了什么 | 效果 |
+|---|---|---|
+| 跨文档视图过渡 | `global.css` 里 `@view-transition { navigation: auto }`，顶栏命名 `topbar` 原地不动 | 整页跳转带 150ms 交叉淡入，**零脚本**；Chrome/Edge 126+、Safari 18.2+，其余浏览器自动退化 |
+| 预取相邻日 | `<link rel="prefetch">`，目标由 `lib/day-nav.ts` 与底部翻阅**同一份判定**算出 | 命中时翻页少一次文档往返；不会预取 404（护栏钉着「预取集合 === 翻阅栏链接集合」） |
+| CSS 内联 | `build.inlineStylesheets: 'always'` | 4G + 4×CPU 实测：请求 2→1，**LCP 560→404 ms** |
+| 剥 HTML 注释 | `scripts/strip-html-comments.mjs`（`npm run build` 第二段），保留 `<!--astro:*-->` 水合标记 | 全站 HTML −8%；admin 岛屿水合由 E2E 守着 |
+
+自己复现数字：
+
+```bash
+npm run build
+npx astro preview --host 127.0.0.1 --port 4399
+node scripts/perf-probe.mjs load   # 首屏：请求数 / 字节 / LCP
+node scripts/perf-probe.mjs nav    # 翻页：预取命中 vs 被挡住（需要相邻日有数据）
+```
+
+**为什么不引 swup / ClientRouter**：那类 JS 路由器要往公开页塞 15–25 KB 脚本并接管导航，
+与「零 JS」的硬护栏正面冲突；而本机能给出的「无刷新感」上限（转场 + 预取）已经拿到了大半，
+剩下的收益是毫秒级，代价是整站多一个会坏的地方。
+
+---
+
 ## 故障速查
 
 | 现象 | 原因 | 怎么修 |
