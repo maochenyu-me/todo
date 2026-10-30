@@ -24,8 +24,20 @@ import { spawn } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { frozenToday } from '../tests/e2e/frozen-today.mjs';
+
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = process.env.E2E_PORT ?? '4323';
+
+/**
+ * 冻结「今天」：种子数据里最新的日期（推导见 `frozen-today.mjs`）。
+ *
+ * 注入 `PUBLIC_BUILD_TODAY` 后，构建期所有 `todayInZone()`（六个页面 + 后台岛屿的
+ * 客户端 bundle）都冻在种子的最新一天上——真实日期越过种子最后一天时，首页不再
+ * 渲染成空状态，E2E 断言不会天天发红。spec 文件里的 `TODAY` 也从同一个 helper
+ * 取值，两边逐字节一致。
+ */
+const FROZEN_TODAY = frozenToday();
 
 /** Astro 的 CLI 入口（不经 node_modules/.bin，免掉平台上 .cmd 的解析差异）。 */
 const ASTRO_CLI = join(ROOT, 'node_modules', 'astro', 'bin', 'astro.mjs');
@@ -38,7 +50,7 @@ function run(args) {
   active = spawn(process.execPath, [ASTRO_CLI, ...args], {
     cwd: ROOT,
     stdio: 'inherit',
-    env: process.env,
+    env: { ...process.env, PUBLIC_BUILD_TODAY: FROZEN_TODAY },
   });
   return active;
 }
@@ -61,7 +73,9 @@ build.on('exit', (code) => {
     shutdown(code ?? 1);
     return;
   }
-  console.log(`[e2e-server] 构建完成，启动预览服务 http://127.0.0.1:${PORT}`);
+  console.log(
+    `[e2e-server] 构建完成（今天冻结在种子最新日 ${FROZEN_TODAY}），启动预览服务 http://127.0.0.1:${PORT}`,
+  );
   // `--host 127.0.0.1`：astro preview 默认只听 `localhost`，而 `localhost` 在 Windows 上
   // 可能解析到 `::1`。Playwright 的健康检查打的是 `127.0.0.1`，两者不是同一个地址，
   // 服务明明起来了健康检查却一直超时（实测踩过：报"Timed out waiting from config.webServer"，

@@ -74,12 +74,18 @@ const canonicalHref = dateKey === today ? withBase('/') : withBase(`/date/${date
 ---
 
 <BaseLayout title={formatLong(dateKey)} activeNav="today" canonicalHref={canonicalHref}>
-  <DayView
-    dateKey={dateKey}
-    entry={entry}
-    corrupt={corrupt}
-    prevHasData={prevHasData}
-    nextHasData={nextHasData}
-    todayKey={today}
-  />
+  {/*
+    单日页保持「读」的版式：限宽 52rem，任务行与元信息不至于在宽屏上被拉散。
+    今天页（`/`）是工作台两栏，这边是文章式单列——两者同构不同宽，各有说法。
+  */}
+  <div class="max-w-[52rem]">
+    <DayView
+      dateKey={dateKey}
+      entry={entry}
+      corrupt={corrupt}
+      prevHasData={prevHasData}
+      nextHasData={nextHasData}
+      todayKey={today}
+    />
+  </div>
 </BaseLayout>

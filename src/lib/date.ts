@@ -77,9 +77,26 @@ export function toDateKey(d: Date, timeZone: string): string {
   return `${year.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
 }
 
-/** 指定时区里的"今天"。`now` 可注入，便于测试。 */
+/**
+ * 构建期冻结的「今天」（`PUBLIC_BUILD_TODAY`），**只给 E2E 用**。
+ *
+ * `scripts/e2e-server.mjs` 构建前把「种子数据里最新的日期」注入进来：E2E 的断言
+ * 与种子绑定（今天有 4 条、前一天是 10-28……），一旦真实日期越过种子的最后一天，
+ * 首页就会渲染成空状态、整套断言天天发红。冻结之后，E2E 构建永远把种子的
+ * 最新一天当作「今天」，与测试进程里 `frozenToday()`（同一份种子推导）逐字节一致。
+ *
+ * 生产构建不设这个变量 → 值是 `undefined` → 走真实时钟，行为一字不变。
+ * 值必须是合法日期 key（`isValidDateKey`），否则当作没设——宁可多说一天真话，
+ * 也不把一个手滑的值冻进全站。
+ */
+function buildTodayOverride(): string | null {
+  const raw: unknown = import.meta.env.PUBLIC_BUILD_TODAY;
+  return typeof raw === 'string' && isValidDateKey(raw) ? raw : null;
+}
+
+/** 指定时区里的"今天"。`now` 可注入，便于测试；构建期可被 `PUBLIC_BUILD_TODAY` 冻结。 */
 export function todayInZone(timeZone: string, now: Date = new Date()): string {
-  return toDateKey(now, timeZone);
+  return buildTodayOverride() ?? toDateKey(now, timeZone);
 }
 
 /** 拆分日期 key。调用方应先用 `isValidDateKey` 校验。 */

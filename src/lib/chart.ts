@@ -64,6 +64,14 @@ export const LINE_GEOMETRY = {
    * 于是 `axisFont = 14` 渲染成 `14 × 0.875 = 12.25px`，仍在可读线上。
    */
   width: 320,
+  /**
+   * 画布宽度的**上限**（显式加宽时的钳制）。
+   *
+   * 统计页的折线图在宽容器里会传入更大的 `width`（与 `planBars` 的只加宽不缩窄同口径）：
+   * 加宽摊开的是 90 个采样点的横轴步距，轴文字仍是 14px 用户单位、1:1 渲染。
+   * 上限只防手滑传进离谱的值；窄屏不缩放，由组件的横向滚动兜底。
+   */
+  maxWidth: 1200,
   /** 缺省画布高度。 */
   height: 120,
   minHeight: 60,
@@ -429,7 +437,15 @@ export function planLine({
 
   const h = limitCount(height, LINE_GEOMETRY.height);
   const canvasHeight = Math.min(Math.max(h, LINE_GEOMETRY.minHeight), LINE_GEOMETRY.maxHeight);
-  const canvasWidth = Math.max(limitCount(width, LINE_GEOMETRY.width), 40);
+  /*
+   * 宽度口径与 `planBars` 一致：**只加宽、绝不缩窄**。
+   * 非法值回落到自然宽度 320；合法但更小的值抬回 320（窄屏有横向滚动兜底，不帮忙挤紧）；
+   * 超过 `maxWidth` 的钳回上限，防手滑。
+   */
+  const canvasWidth = Math.min(
+    Math.max(limitCount(width, LINE_GEOMETRY.width), LINE_GEOMETRY.width),
+    LINE_GEOMETRY.maxWidth,
+  );
 
   const plotLeft = LINE_GEOMETRY.padLeft;
   const plotWidth = Math.max(canvasWidth - LINE_GEOMETRY.padLeft - LINE_GEOMETRY.padRight, 1);

@@ -1,0 +1,84 @@
+---
+import { Archive, BookOpen, CalendarDays, ChartLine, Tag } from '@lucide/astro';
+import type { NavKey } from '../lib/types';
+import { withBase } from '../lib/urls';
+import { siteConfig } from '../../site.config.ts';
+import ThemeToggle from './ThemeToggle.astro';
+
+interface Props {
+  activeNav?: NavKey;
+}
+
+const { activeNav } = Astro.props;
+
+/**
+ * 导航项的顺序与图标写在这里；**是否出现只由 `siteConfig.frontend.pages` 决定**，
+ * 配置里关掉的页面不出现在导航里。（`pages.day` 不是独立导航项：单日页归在今天之下。）
+ */
+const NAV_ITEMS = [
+  { key: 'today', label: '今天', href: '/', Icon: BookOpen },
+  { key: 'archive', label: '归档', href: '/archive', Icon: Archive },
+  { key: 'calendar', label: '日历', href: '/calendar', Icon: CalendarDays },
+  { key: 'tags', label: '标签', href: '/tags', Icon: Tag },
+  { key: 'stats', label: '统计', href: '/stats', Icon: ChartLine },
+] as const;
+
+const pages = siteConfig.frontend.pages;
+const items = NAV_ITEMS.filter((item) => pages[item.key]);
+---
+
+<!--
+  顶栏（取代旧版左检索栏）：sticky、1px 下边框、半透明模糊，全宽交给正文。
+  桌面：品牌＋tagline 靠左，五个导航项横排（当前项的下划线压在顶栏边框上，
+  GitHub 标签页语汇），明暗切换贴右。
+  窄屏：两行——品牌在左、明暗在右，导航收成第二排等宽检索标签，
+  当前那张标签下方压一道实线（与旧版窄屏形态一致，一个像素都不动）。
+  两种形态共用同一份 DOM，只靠 lg: 前缀切换。
+-->
+<header class="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur">
+  <div class="mx-auto max-w-[90rem] px-5 sm:px-8 lg:px-10">
+    <div
+      class="flex flex-wrap items-center gap-x-4 py-2 lg:h-14 lg:flex-nowrap lg:gap-x-6 lg:py-0"
+    >
+      <a
+        href={withBase('/')}
+        class="order-1 min-w-0 text-[1.0625rem] font-semibold tracking-[-0.01em] text-foreground transition-colors hover:text-primary"
+        >{siteConfig.site.title}</a
+      >
+      <p
+        class="order-2 hidden min-w-0 max-w-[26rem] truncate text-[0.8125rem] text-muted-foreground lg:block"
+      >
+        {siteConfig.site.tagline}
+      </p>
+
+      <ThemeToggle />
+
+      <nav aria-label="主导航" class="order-3 w-full lg:order-3 lg:mt-0 lg:w-auto">
+        <ul class="flex lg:h-full lg:items-stretch">
+          {
+            items.map(({ key, label, href, Icon }) => {
+              const isActive = activeNav === key;
+              return (
+                <li class="min-w-0 flex-1 lg:flex-none">
+                  <a
+                    href={withBase(href)}
+                    aria-current={isActive ? 'page' : undefined}
+                    class:list={[
+                      'flex items-center justify-center gap-1.5 border-b-2 py-2.5 text-[0.875rem] whitespace-nowrap transition-colors lg:h-full lg:justify-start lg:gap-2 lg:px-3 lg:py-0',
+                      isActive
+                        ? 'border-primary font-medium text-foreground'
+                        : 'border-transparent text-muted-foreground hover:text-foreground',
+                    ]}
+                  >
+                    <Icon size={15} stroke-width={1.75} class="shrink-0" aria-hidden="true" />
+                    <span>{label}</span>
+                  </a>
+                </li>
+              );
+            })
+          }
+        </ul>
+      </nav>
+    </div>
+  </div>
+</header>

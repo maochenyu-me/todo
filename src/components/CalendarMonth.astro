@@ -11,15 +11,11 @@
  * 不区分「好/坏」，只区分「画了多少」。没有记录的那天不画横条——空轨道本身就是信息。
  */
 import { formatYearMonth, parseDateKey, startOfWeekGrid } from '../lib/date';
-import { monthStart } from '../lib/months';
+import { type CalendarDay, monthStart } from '../lib/months';
 import { withBase } from '../lib/urls';
 
-/** 某一天在月历里的全部信息；只包含**磁盘上有文件**的日期。 */
-export interface DayCell {
-  date: string;
-  total: number;
-  done: number;
-}
+/** 传给月历的一天 = `calendarDays()` 的产物（含格子内露出的标题预览）。 */
+export type DayCell = CalendarDay;
 
 interface Props {
   /** `YYYY-MM` */
@@ -171,6 +167,8 @@ function dayHref(dateKey: string): string {
           const pct = cell.total === 0 ? 0 : Math.round((cell.done / cell.total) * 100);
           const densityLabel =
             cell.total === 0 ? '没有条目' : `完成 ${cell.done} / ${cell.total}`;
+          // 格子里露不下的条数如实报给读屏；视力读者点进这一天就能看全。
+          const extra = cell.total - cell.previews.length;
 
           return (
             <li class="flex">
@@ -178,9 +176,10 @@ function dayHref(dateKey: string): string {
                 href={dayHref(dateKey)}
                 aria-current={isToday ? 'date' : undefined}
                 class:list={[
-                  'flex min-h-[3.25rem] w-full flex-col rounded-[2px] px-1.5 pt-1 pb-1.5 transition-colors',
+                  'flex min-h-[3.25rem] w-full flex-col rounded-[2px] px-1.5 pt-1 pb-1.5 transition-colors md:min-h-[5.75rem]',
                   'hover:bg-muted',
                   inMonth ? null : 'opacity-70',
+                  isToday ? 'bg-muted/50' : null,
                 ]}
               >
                 <span
@@ -190,6 +189,23 @@ function dayHref(dateKey: string): string {
                   ]}
                 >
                   {dayNumber}
+                </span>
+                {/*
+                  标题预览：宽格子（md 起）每天露出前两条，一行一条、超出截断。
+                  预览只是纯文字的「写了什么」，不区分完成与否——状态由下面的密度条
+                  与点进去的整天视图表达，格子里不重复画第二套勾选语汇。
+                */}
+                <span class="mt-0.5 hidden space-y-px md:block" aria-hidden="true">
+                  {cell.previews.map((title) => (
+                    <span class="block truncate text-[0.6875rem] leading-[1.05rem] text-muted-foreground">
+                      {title}
+                    </span>
+                  ))}
+                  {extra > 0 ? (
+                    <span class="block text-[0.6875rem] leading-[1.05rem] text-muted-foreground/70">
+                      还有 {extra} 条
+                    </span>
+                  ) : null}
                 </span>
                 {/* 细横条：轨道＝这天有记录，填充＝完成密度。纯装饰，数字在 sr-only 里。 */}
                 <span
@@ -201,7 +217,13 @@ function dayHref(dateKey: string): string {
                     style={`width:${pct}%`}
                   />
                 </span>
-                <span class="sr-only">，{densityLabel}</span>
+                <span class="sr-only">
+                  ，{densityLabel}
+                  {
+                    /* 预览被截掉的部分读屏也要知道：完整内容点进这一天就有。 */
+                    extra > 0 ? `，还有 ${extra} 条未显示` : ''
+                  }
+                </span>
               </a>
             </li>
           );

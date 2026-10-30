@@ -1,8 +1,8 @@
 ---
 import '../styles/global.css';
 import GlobalStyles from '../components/GlobalStyles.astro';
-import Rail from '../components/Rail.astro';
 import ThemeBootstrap from '../components/ThemeBootstrap.astro';
+import TopBar from '../components/TopBar.astro';
 import type { NavKey } from '../lib/types';
 import { withBase } from '../lib/urls';
 import { siteConfig } from '../../site.config.ts';
@@ -18,36 +18,9 @@ interface Props {
    * 否则同一份内容有两个可索引的 URL。其余页面留空，按当前 pathname 自己算。
    */
   canonicalHref?: string;
-  /**
-   * 主列**上限**从 40rem 放宽到 48rem。目前只有 `/stats` 打开。
-   *
-   * 打开它也会同步放宽外层框架（`FRAME_MEASURE`）：左边栏 + 主列这一对要整体居中，
-   * 框架必须跟着主列一起变宽，否则那 8rem 会溢出框架、被居中算错。
-   *
-   * 这不是「放宽行宽」：40rem 那条约束约束的是**正文**（约 34 个汉字，spec §7.3），
-   * 而正文的行宽由页面自己用 `max-w-[34rem]` 守住（见 `stats.astro` 的
-   * `PROSE_MEASURE`）。这个开关腾出来的宽度只给**比正文更宽的元素**用——
-   * 统计页那两张图，塞进正文行宽会被压成一条窄带，右边空一大片。
-   *
-   * 所以：不把图表塞进 34 字行宽的页面，一个字都不用改（缺省仍是 40rem）；
-   * 打开它的页面**必须**自己给正文加度量约束，否则正文就会跟着变宽。
-   */
-  wide?: boolean;
 }
 
-const { title, description = siteConfig.site.tagline, activeNav, canonicalHref, wide } = Astro.props;
-
-/**
- * 外层框架的度量：**左栏 + 主列这一对**的整体宽度，用来把这对内容在视口里居中。
- *
- * 15rem 是 `Rail` 的 `lg:w-60`，40rem/48rem 是 `<main>` 在那两种模式下的上限——
- * 两者相加就是这一对在桌面上的自然宽度。**必须跟着 `wide` 一起变**：`/stats` 的主列
- * 会放宽到 48rem，框架若留在 55rem，多出来的 8rem 就架在框架外面，居中会被算成偏右。
- *
- * 只在 `lg:` 起生效：窄屏压根没有左栏（顶栏形态、主列铺满），一个字都不用改，
- * 320/375/768 上的排版与改动前逐像素一致。
- */
-const FRAME_MEASURE = wide ? 'lg:mx-auto lg:max-w-[63rem]' : 'lg:mx-auto lg:max-w-[55rem]';
+const { title, description = siteConfig.site.tagline, activeNav, canonicalHref } = Astro.props;
 
 const pageTitle = title ? `${title}｜${siteConfig.site.title}` : siteConfig.site.title;
 // canonical 由 site.url + 当前 pathname 拼出。pathname 已含 base，
@@ -83,34 +56,18 @@ const canonical = new URL(canonicalHref ?? Astro.url.pathname, siteConfig.site.u
       class="sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-50 focus:border focus:border-primary focus:bg-card focus:px-3 focus:py-2 focus:text-[0.8125rem] focus:text-foreground"
       >跳到正文</a
     >
+    <TopBar activeNav={activeNav} />
     {/*
-      `lg:mx-auto lg:max-w-[55rem]`（`wide` 下 63rem）把**左栏 + 主列这一对**整体居中。
-      只在 lg 起生效：窄屏没有左栏，主列照旧铺满，320/375/768 上一个像素都没动。
-      左右两边的留白因此相等，页面不再左重；而左栏始终贴着主列的左边，不会被甩到视口边缘。
+      全宽工作台容器：`max-w-[90rem]`（1440px）封顶、居中，1920 屏左右各只留 240px。
+      行宽护栏不再由布局层代管——「读」的文字由各页自己持度量（如 stats 的
+      `PROSE_MEASURE` 34 字行宽），这里只负责把可用宽度放开。
     */}
-    <div class:list={['lg:grid lg:grid-cols-[15rem_minmax(0,1fr)]', FRAME_MEASURE]}>
-      <Rail activeNav={activeNav} />
-      {/*
-        主列本身**仍然左对齐**（不自己居中）：居中的是上面那层框架，而主列必须紧挨左栏，
-        两者之间的距离就是 0——这一对才读作「索引卡 + 簿纸」。
-
-        缺省 `max-w-[40rem]`：lg 下 40rem − 2×3rem 内边距 = 34 个汉字行宽。
-
-        `wide` 把**列**的上限放到 48rem（lg 下内容宽 42rem），且只给 `/stats`：那一页的
-        正文自己守 34rem，多出来的 8rem 只给两张图。md 就打开是因为图表画布是**构建期定宽**
-        的 672px——768px 视口下 40rem 的列只剩 576px 内容宽，图会被迫横向滚动，而那时
-        屏幕上明明还有地方。md 起列宽 48rem、内容 704px，672 装得下，不必滑。
-      */}
-      <main
-        id="main"
-        class:list={[
-          'w-full min-w-0 px-5 pb-16 pt-8 sm:px-8 lg:px-12 lg:pt-10',
-          wide ? 'max-w-[40rem] md:max-w-[48rem]' : 'max-w-[40rem]',
-        ]}
-      >
-        <slot />
-      </main>
-    </div>
+    <main
+      id="main"
+      class="mx-auto w-full max-w-[90rem] px-5 pb-14 pt-6 sm:px-8 lg:px-10 lg:pt-8"
+    >
+      <slot />
+    </main>
     {/* 焦点环 / 选区色 / 减少动效：与后台共用同一份源码（`GlobalStyles.astro`）。
         `<style is:global>` 会被 Astro 提升到 `<head>`，位置只影响样式表内的先后顺序。 */}
     <GlobalStyles />

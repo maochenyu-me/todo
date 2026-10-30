@@ -120,7 +120,7 @@ const canonicalHref = tagPath(tag);
 ---
 
 <BaseLayout title={`#${tag}`} activeNav="tags" canonicalHref={canonicalHref}>
-  <header class="pb-6">
+  <header class="pb-5">
     <h1 class="text-[1.375rem] font-semibold tracking-[-0.01em] text-foreground">
       <span class="text-muted-foreground">#</span>{tag}
     </h1>
@@ -129,44 +129,54 @@ const canonicalHref = tagPath(tag);
     </p>
   </header>
 
-  <TagIndex tags={allTags} currentTag={tag} />
+  {/*
+    两栏（lg 起）：左边一列竖排标签索引（sticky 跟着滚动，顶栏高度 3.5rem + 呼吸 1.25rem
+    = top-20），右边任务列表占主宽。窄屏照旧先索引后列表，一列到底。
+  */}
+  <div class="lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-x-10">
+    <div class="min-w-0">
+      <TagIndex tags={allTags} currentTag={tag} layout="column" />
+    </div>
 
-  {
-    shownDays.length === 0 ? (
-      <EmptyState title="这个标签下还没有事" hint="回到今天，给一条待办打上它。" />
-    ) : (
-      <div>
-        {shownDays.map((day) => (
-          <section class="grid gap-x-4 gap-y-1 border-t border-border py-4 sm:grid-cols-[6.5rem_minmax(0,1fr)]">
-            <h2 class="text-[0.8125rem] font-normal">
-              <a
-                href={dayHref(day.date)}
-                class="tabular-nums text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
-              >
-                {formatMedium(day.date)}
-              </a>
-            </h2>
-            <ul>
-              {day.tasks.map((task) => (
-                <TaskRow
-                  task={task}
-                  showTimeBlock={showTimeBlock}
-                  showTags={showTags}
-                  showPriority={showPriority}
-                />
-              ))}
-            </ul>
-          </section>
-        ))}
-      </div>
-    )
-  }
+    <div class="min-w-0 border-t border-border">
+      {
+        shownDays.length === 0 ? (
+          <div class="pt-4">
+            <EmptyState title="这个标签下还没有事" hint="回到今天，给一条待办打上它。" />
+          </div>
+        ) : (
+          shownDays.map((day) => (
+            <section class="grid gap-x-4 gap-y-1 border-b border-border py-4 sm:grid-cols-[6.5rem_minmax(0,1fr)]">
+              <h2 class="text-[0.8125rem] font-normal">
+                <a
+                  href={dayHref(day.date)}
+                  class="tabular-nums text-muted-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
+                >
+                  {formatMedium(day.date)}
+                </a>
+              </h2>
+              <ul>
+                {day.tasks.map((task) => (
+                  <TaskRow
+                    task={task}
+                    showTimeBlock={showTimeBlock}
+                    showTags={showTags}
+                    showPriority={showPriority}
+                  />
+                ))}
+              </ul>
+            </section>
+          ))
+        )
+      }
 
-  {
-    hiddenCount > 0 && capped.cap !== null ? (
-      <p class="mt-4 text-[0.8125rem] text-muted-foreground">
-        另有 {hiddenCount} 条超出单页显示上限（{capped.cap} 条），此处未显示。
-      </p>
-    ) : null
-  }
+      {
+        hiddenCount > 0 && capped.cap !== null ? (
+          <p class="mt-4 text-[0.8125rem] text-muted-foreground">
+            另有 {hiddenCount} 条超出单页显示上限（{capped.cap} 条），此处未显示。
+          </p>
+        ) : null
+      }
+    </div>
+  </div>
 </BaseLayout>

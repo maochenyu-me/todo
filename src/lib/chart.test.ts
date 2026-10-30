@@ -335,6 +335,32 @@ describe('chart.ts — 折线路径', () => {
     expect(plan.axisLabels[0]?.y).toBe(plan.topY);
     expect(plan.axisLabels[1]?.y).toBe(plan.baselineY);
   });
+
+  test('宽度：显式加宽铺满目标值，字号不动（口径同 planBars）', () => {
+    const points = [
+      { x: 'a', y: 0 },
+      { x: 'b', y: 1 },
+    ];
+    const plan = planLine({ points, width: 992 });
+    expect(plan.width).toBe(992);
+    // 加宽只摊开横轴：绘图区跟着变宽，首尾两点仍贴住两端。
+    expect(plan.plotWidth).toBe(992 - LINE_GEOMETRY.padLeft - LINE_GEOMETRY.padRight);
+    expect(plan.path).toBe(
+      `M${plan.plotLeft} ${plan.baselineY} L${plan.plotLeft + plan.plotWidth} ${plan.topY}`,
+    );
+  });
+
+  test('宽度：只加宽不缩窄，超上限钳回 maxWidth，非法值回落自然宽度', () => {
+    const points = [{ x: 'a', y: 0.5 }];
+    // 比自然宽度小 → 抬回 320（窄屏靠横向滚动兜底，不帮忙挤紧）。
+    expect(planLine({ points, width: 100 }).width).toBe(LINE_GEOMETRY.width);
+    // 超上限 → 钳回。
+    expect(planLine({ points, width: 10_000 }).width).toBe(LINE_GEOMETRY.maxWidth);
+    // 非法 → 自然宽度。
+    for (const width of [undefined, Number.NaN, 0]) {
+      expect(planLine({ points, width }).width).toBe(LINE_GEOMETRY.width);
+    }
+  });
 });
 
 describe('chart.ts — 标签装得下（防「文字被 viewBox 静默裁掉」）', () => {

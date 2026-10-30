@@ -11,7 +11,7 @@ import { Monitor, Moon, Sun } from '@lucide/astro';
 <button
   type="button"
   data-theme-toggle
-  class="order-2 ml-auto flex items-center gap-2 py-2 pl-4 text-[0.8125rem] text-muted-foreground transition-colors hover:text-foreground lg:order-4 lg:mt-auto lg:ml-0 lg:w-full lg:pt-4 lg:pl-0"
+  class="order-2 ml-auto flex items-center gap-2 py-2 pl-4 text-[0.8125rem] text-muted-foreground transition-colors hover:text-foreground lg:order-4 lg:ml-auto lg:py-0 lg:pl-5"
 >
   <span data-when="system" class="toggle-state">
     <Monitor size={15} stroke-width={1.75} aria-hidden="true" />
@@ -83,7 +83,7 @@ import { Monitor, Moon, Sun } from '@lucide/astro';
     display: inline-flex;
   }
 
-  /* 状态词只在桌面左栏露出；窄屏顶栏只留图标，省位置 */
+  /* 状态词只在桌面顶栏露出；窄屏只留图标，省位置 */
   .toggle-label {
     display: none;
   }

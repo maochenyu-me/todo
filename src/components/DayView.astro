@@ -106,7 +106,7 @@ const ticksEmptyLabel = isCorrupt
 ---
 
 <!-- 页首：印章 ＋ 刻度，全部左对齐。印章是页面上唯一倾斜的东西。 -->
-<header class="flex flex-wrap items-end gap-x-7 gap-y-5 pb-7">
+<header class="flex flex-wrap items-end gap-x-7 gap-y-5 pb-5">
   <DateStamp dateKey={dateKey} />
   <div class="pb-1.5">
     <ProgressTicks total={summary.total} done={summary.done} emptyLabel={ticksEmptyLabel} />
@@ -177,7 +177,7 @@ const ticksEmptyLabel = isCorrupt
 -->
 <nav
   aria-label="按日翻阅"
-  class="mt-11 flex items-center justify-between gap-3 text-[0.8125rem]"
+  class="mt-9 flex items-center justify-between gap-3 text-[0.8125rem]"
 >
   {
     prevHasData ? (

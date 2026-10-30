@@ -19,6 +19,7 @@ import {
   sequence,
   type FakeRepo,
 } from './github-mock';
+import { frozenToday } from './frozen-today.mjs';
 
 /**
  * 后台 `/admin` 的端到端用例：spec §10.3 的九条验收，GitHub API 全部拦截。
@@ -48,7 +49,8 @@ import {
  */
 
 const ACTIVE_DIR = 'src/data/todos';
-const TODAY = '2026-10-29';
+/** 与构建产物一致的「今天」：种子里最新的日期（`e2e-server` 构建时也冻在它上面）。 */
+const TODAY = frozenToday();
 const DAY_A = '2026-10-27';
 const DAY_B = '2026-10-28';
 

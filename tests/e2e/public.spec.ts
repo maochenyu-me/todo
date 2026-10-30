@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { todayInZone } from '../../src/lib/date';
+import { frozenToday } from './frozen-today.mjs';
 
 /**
  * 公开页面 E2E：**读者视角**的六件事。
@@ -15,17 +15,15 @@ import { todayInZone } from '../../src/lib/date';
  * 全用正则匹配"某个数字"就什么也没证明。
  */
 
-const TZ = 'Asia/Shanghai';
-
 /**
- * 与站点同一时区的"今天"。
+ * 与产物一致的"今天"：种子里最新的日期。
  *
- * 这里在**测试进程**里重算一次，而不是从页面读。`scripts/e2e-server.mjs` 保证
- * 构建紧接着测试发生，所以两边看到的"今天"一致；唯一的裂缝是构建与测试恰好跨过
- * 午夜（23:59:59 构建、00:00:01 断言），那种情况下这条断言会红——红的理由是真的
- * （产物已经过期），重跑一次即可，不是需要修的 flaky。
+ * `e2e-server.mjs` 构建时把同一个值注入 `PUBLIC_BUILD_TODAY`，页面的 `todayInZone()`
+ * 全部冻在它上面。这里**必须**用同一份推导（`frozenToday()`），在测试进程里
+ * `todayInZone()` 重算会拿到真实时钟的今天——日期一越过种子的最后一天，
+ * 产物（冻在种子里）与断言（走在真实时钟上）就分叉了。
  */
-const TODAY = todayInZone(TZ);
+const TODAY = frozenToday();
 
 test.describe('今日页', () => {
   test('渲染出日期、进度刻度与任务列表', async ({ page }) => {

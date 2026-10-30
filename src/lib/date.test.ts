@@ -30,6 +30,26 @@ describe('时区', () => {
     expect(toDateKey(new Date('2026-12-31T16:00:00Z'), 'Asia/Shanghai')).toBe('2027-01-01');
     expect(toDateKey(new Date('2026-12-31T15:59:59Z'), 'Asia/Shanghai')).toBe('2026-12-31');
   });
+
+  test('PUBLIC_BUILD_TODAY 冻结「今天」，非法值当作没设（E2E 钩子）', () => {
+    const env = import.meta.env as Record<string, unknown>;
+    const saved = env.PUBLIC_BUILD_TODAY;
+    try {
+      // 合法值：真实时钟走到 2027 年，「今天」仍冻在种子的最后一天。
+      env.PUBLIC_BUILD_TODAY = '2026-10-29';
+      expect(todayInZone('Asia/Shanghai', new Date('2027-01-01T00:00:00Z'))).toBe('2026-10-29');
+
+      // 非法值（格式不对 / 不是真实日历日 / 非字符串）：回落真实时钟，不冻。
+      for (const bad of ['2026-13-99', '2026-02-30', 'garbage', 12345]) {
+        env.PUBLIC_BUILD_TODAY = bad;
+        expect(todayInZone('Asia/Shanghai', new Date('2026-10-28T16:30:00Z'))).toBe('2026-10-29');
+      }
+    } finally {
+      // 显式还原：这个钩子是全站行为，不许从单测里漏出去。
+      if (saved === undefined) delete env.PUBLIC_BUILD_TODAY;
+      else env.PUBLIC_BUILD_TODAY = saved;
+    }
+  });
 });
 
 describe('addDays', () => {

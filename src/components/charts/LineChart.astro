@@ -12,14 +12,14 @@
  *
  * 零 JS：只产出静态内联 `<svg>`，没有 `<script>`、没有 `client:*`。
  *
- * ## 尺寸：自然宽度 + 只缩不放
+ * ## 尺寸：1:1 渲染，窄屏横向滚动，不缩放
  *
- * 画布输出 `width`/`height` 属性的自然尺寸（`LINE_GEOMETRY.width` = 320 用户单位），
- * 外层只加 `max-w-full` + `h-auto`：容器够宽就按 320px 原样画（轴文字 14px），
- * 窄到 280px（320px 屏的内容区）时等比缩 0.875 倍（12.25px），仍然可读。
- * 不用 `w-full`——那会在桌面端把画布拉宽 1.7 倍，轴文字涨到 24px。
- *
- * ## 文字不许被裁：几何留白是被字宽算出来的
+ * 画布输出 `width`/`height` 属性的自然尺寸（缺省 `LINE_GEOMETRY.width` = 320 用户单位，
+ * 宽容器可由调用方传入更大的 `width`，口径与 `BarSquares` 相同：只加宽不缩窄）。
+ * 外层是横向滚动容器：容器比画布窄时左右滑动看全，**不做等比缩放**——
+ * 缩放会把 14px 的轴字按容器比例压小（320 画布在 280px 内容区上就已只剩 12.25px），
+ * 宽画布下更没法看。宽屏上画布按传入宽度 1:1 铺满，轴文字纹丝不动。
+ * 文字不许被裁：几何留白是被字宽算出来的
  *
  * SVG 不会替你换行或撑开画布，超出 viewBox 的文字是**静默裁掉**的。所以左边距与
  * 首尾标签的处理都由 `planLine()` 用 `advanceEm()` 量过：
@@ -38,11 +38,22 @@ interface Props {
   points: { x: string; y: number }[];
   /** 画布高度（像素）。缺省 120；非法值回落到 120，超出 60..320 的夹进区间。 */
   height?: number;
+  /**
+   * 目标画布宽度（像素）。缺省＝自然宽度（`LINE_GEOMETRY.width` = 320）。
+   *
+   * 与 `BarSquares` 的 `width` 同口径：**只加宽、绝不缩窄**。加宽摊开的是采样点
+   * 的横轴步距，轴文字仍是 14px 用户单位、1:1 渲染——所以宽容器上传入目标宽度
+   * 能铺满整列而不放大字号（统计页的用法）。
+   *
+   * 画布比容器窄时靠外层横向滚动兜底（与柱状图同一套），**不做等比缩放**：
+   * 缩放会把 14px 的轴字压到读不清（320 时代的「只缩不放」注的就是这个）。
+   */
+  width?: number;
 }
 
-const { points, height } = Astro.props;
+const { points, height, width } = Astro.props;
 
-const plan = planLine({ points, height });
+const plan = planLine({ points, height, width });
 
 /** 图形可访问名：覆盖范围、点数、纵轴口径。具体读数在下面的表格里。 */
 const ariaLabel =
@@ -59,18 +70,24 @@ const ariaLabel =
   ) : (
     <div>
       {/*
-        图形的可访问名只说「这是什么东西、跨多少点」；每个点的数值交给下面那张
-        仅供读屏的表格。`role="img"` 之下所有 <text> 都只是装饰，不会被朗读，
-        所以横轴日期与刻度百分数都不重复朗读，数值也不会漏。
+        横向滚动容器（与 `BarSquares` 同一套兜底）：画布 1:1 渲染，容器比画布窄时
+        左右滑动看全，轴文字始终保持 14px。可滚动区域显式 `tabindex="0"` +
+        `role="group"` + 中文名，键盘与读屏都要能到达。
       */}
-      <svg
-        role="img"
-        aria-label={ariaLabel}
-        viewBox={`0 0 ${plan.width} ${plan.height}`}
-        width={plan.width}
-        height={plan.height}
-        class="block h-auto max-w-full text-foreground"
+      <div
+        class="overflow-x-auto"
+        tabindex="0"
+        role="group"
+        aria-label={`近 90 天完成率折线图，宽 ${plan.width} 像素，窄屏可左右滚动`}
       >
+        <svg
+          role="img"
+          aria-label={ariaLabel}
+          viewBox={`0 0 ${plan.width} ${plan.height}`}
+          width={plan.width}
+          height={plan.height}
+          class="block max-w-none text-foreground"
+        >
         {/* 轴：底边一条横线，左边一条竖线。纯 <line>，没有刻度线阵。 */}
         <line
           x1={plan.plotLeft}
@@ -152,6 +169,7 @@ const ariaLabel =
           ) : null
         }
       </svg>
+      </div>
 
       {/*
         读屏拿到的必须是数字：`role="img"` 的图形不朗读内部文本，所以每个点的
