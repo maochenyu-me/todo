@@ -25,7 +25,13 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import EmptyState from '../components/EmptyState.astro';
 import ProgressTicks from '../components/ProgressTicks.astro';
 import { loadAllEntries } from '../lib/data';
-import { formatMedium, formatYearMonth } from '../lib/date';
+import {
+  formatMedium,
+  formatYearMonth,
+  parseDateKey,
+  startOfWeekGrid,
+  todayInZone,
+} from '../lib/date';
 import { groupByYearMonth, monthStart } from '../lib/months';
 import { withBase } from '../lib/urls';
 import { siteConfig } from '../../site.config.ts';
@@ -65,6 +71,18 @@ function yearAnchor(year: string): string {
   return `#year-${year}`;
 }
 
+/** 「今天」的唯一依据：站点时区。迷你月历里高亮今天用。 */
+const todayKey = todayInZone(siteConfig.site.timeZone);
+const { weekStartsOn } = siteConfig.frontend;
+
+/** 卡片迷你月历的星期表头（与 `CalendarMonth` 同一套排版常量）。 */
+const WEEK_LABELS = ['日', '一', '二', '三', '四', '五', '六'] as const;
+const weekLabels = Array.from({ length: 7 }, (_, i) => WEEK_LABELS[(weekStartsOn + i) % 7]);
+
+/** 侧栏合计：全站总完成数（只数数量，不碰标题——归档护栏不受影响）。 */
+const allTotal = groups.reduce((s, year) => s + year.months.reduce((s2, m) => s2 + m.days.reduce((s3, d) => s3 + d.total, 0), 0), 0);
+const allDone = groups.reduce((s, year) => s + year.months.reduce((s2, m) => s2 + m.days.reduce((s3, d) => s3 + d.done, 0), 0), 0);
+
 /**
  * 一天在那一天的页面里——**一律 `/date/<key>`，今天也不例外**。
  *
@@ -90,95 +108,207 @@ function dayHref(dateKey: string): string {
     groups.length === 0 ? (
       <EmptyState title="还没有任何记录" hint="写下第一天之后，这里会按年月长出第一行。" />
     ) : (
-      <div>
-        {/* 年份锚点：横向一排，点按跳到对应年份的卡片组。 */}
-        <nav aria-label="按年份跳转" class="pb-4">
-          <ul class="flex flex-wrap gap-x-4 gap-y-1">
-            {groups.map((year) => (
-              <li>
-                <a
-                  href={yearAnchor(year.year)}
-                  class="text-[0.8125rem] tabular-nums text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
-                >
-                  {year.year}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </nav>
+      <div class="xl:grid xl:grid-cols-[minmax(0,1fr)_16rem] xl:gap-x-10">
+        {/*
+          左列：各年的月份卡片。右列是 sticky 合计栏（窄屏折到内容下方、DOM 在后），
+          所以左列要 xl:order-1、aside 要 xl:order-2 来固定两栏的位置。
+        */}
+        <div class="min-w-0 xl:order-1">
+          {groups.map((year) => (
+            <section id={`year-${year.year}`} class="scroll-mt-24 pb-2">
+              <h2 class="pb-2 pt-2 text-[1rem] font-semibold tabular-nums tracking-[-0.01em] text-foreground">
+                {year.year}
+                <span class="ml-1 text-[0.8125rem] font-normal text-muted-foreground">年</span>
+              </h2>
 
-        {groups.map((year) => (
-          <section id={`year-${year.year}`} class="scroll-mt-24 pb-2">
-            <h2 class="pb-2 pt-2 text-[1rem] font-semibold tabular-nums tracking-[-0.01em] text-foreground">
-              {year.year}
-              <span class="ml-1 text-[0.8125rem] font-normal text-muted-foreground">年</span>
-            </h2>
+              {/*
+                月份卡片网格：`auto-fit` 按内容定列数——卡片少时摊宽吃满整行
+                （不再留出固定空列），卡片多了自动排密。`min(100%, 21rem)` 防的是
+                窄屏上最小轨宽溢出视口。卡片是 shadcn 的面板语汇（bg-card + 1px 边框）。
+              */}
+              <div class="grid gap-4 border-t border-border pt-4 grid-cols-[repeat(auto-fit,minmax(min(100%,21rem),1fr))]">
+                {year.months.map((month) => {
+                  // 卡片内迷你月历：与 CalendarMonth 同一套网格算术，整月六行铺满。
+                  const byDate = new Map(month.days.map((d) => [d.date, d]));
+                  const cells = startOfWeekGrid(monthStart(month.monthKey), weekStartsOn);
+                  const monthTotal = month.days.reduce((s, d) => s + d.total, 0);
+                  const monthDone = month.days.reduce((s, d) => s + d.done, 0);
+                  return (
+                    <div class="@container rounded-md border border-border bg-card p-4">
+                      <div class="flex items-baseline justify-between gap-2 pb-3">
+                        <h3 class="text-[0.8125rem] font-medium text-muted-foreground">
+                          {formatYearMonth(monthStart(month.monthKey))}
+                        </h3>
+                        <span class="shrink-0 text-[0.75rem] tabular-nums text-muted-foreground">
+                          {month.days.length} 天有记录
+                        </span>
+                      </div>
 
-            {/*
-              月份卡片网格：2 / 3 / 4 列随屏宽生长。卡片是 shadcn 的面板语汇
-              （bg-card + 1px 边框），卡内仍是那张连续表——列的是「哪些天」，只是
-              把原来贯穿全页的一张长表切成了一月一张，扫视的颗粒从「整年」变成「整月」。
-            */}
-            <div class="grid gap-4 border-t border-border pt-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-              {year.months.map((month) => (
-                <div class="rounded-md border border-border bg-card p-4">
-                  <h3 class="pb-2 text-[0.8125rem] font-medium text-muted-foreground">
-                    {formatYearMonth(monthStart(month.monthKey))}
-                  </h3>
+                      <div class="flex flex-wrap gap-x-6 gap-y-4">
+                        {/*
+                          密度月历：卡片够宽（@xl = 36rem）才出现，摊宽的卡片由它把
+                          左半边用起来；窄卡上隐藏，保持原来的纯表形态。
+                        */}
+                        <div class="hidden w-60 shrink-0 @xl:block">
+                          <ul class="grid grid-cols-7 gap-x-0.5 pb-1" aria-hidden="true">
+                            {weekLabels.map((label) => (
+                              <li class="text-[0.625rem] text-muted-foreground">{label}</li>
+                            ))}
+                          </ul>
+                          <ul class="grid grid-cols-7 gap-x-0.5 gap-y-0.5">
+                            {cells.map((dateKey) => {
+                              const cell = byDate.get(dateKey);
+                              const inMonth = dateKey.slice(0, 7) === month.monthKey;
+                              const dayNumber = parseDateKey(dateKey).d;
+                              const isToday = dateKey === todayKey;
 
-                  <table class="w-full border-collapse text-[0.875rem]">
-                    <caption class="sr-only">
-                      {formatYearMonth(monthStart(month.monthKey))}每天的完成情况
-                    </caption>
-                    <thead class="sr-only">
-                      <tr>
-                        <th scope="col">日期</th>
-                        <th scope="col">完成情况</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {month.days.map((day) => (
-                        <tr class="border-b border-border/70 align-top">
-                          <th scope="row" class="w-[9.5rem] py-2.5 pr-3 text-left font-normal">
-                            <a
-                              href={dayHref(day.date)}
-                              class="tabular-nums text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
-                            >
-                              {formatMedium(day.date)}
-                            </a>
-                          </th>
-                          <td class="py-2.5">
-                            {/*
-                              `maxTicks` 只在这里传：归档页是「一屏扫很多天」的版面，
-                              一天几百条会把一行撑爆、把逐日扫视彻底毁掉。单日页不传，
-                              行为一点没变（那边本来就是「这一天的全部都在这一页上」）。
-                              被省掉的格数以 `+N` 紧凑标出，精确的 N/M 照常写在刻度下面。
-                            */}
-                            <ProgressTicks
-                              total={day.total}
-                              done={day.done}
-                              emptyLabel="没有条目"
-                              maxTicks={ARCHIVE_MAX_TICKS}
-                            />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                              if (!cell) {
+                                return (
+                                  <li
+                                    class:list={[
+                                      'px-0.5 py-0.5 text-[0.6875rem] leading-4 tabular-nums',
+                                      inMonth ? 'text-muted-foreground/50' : 'text-border/60',
+                                    ]}
+                                  >
+                                    {dayNumber}
+                                  </li>
+                                );
+                              }
+
+                              const pct = cell.total === 0 ? 0 : Math.round((cell.done / cell.total) * 100);
+                              return (
+                                <li class="px-0.5 py-0.5">
+                                  <a
+                                    href={dayHref(dateKey)}
+                                    aria-current={isToday ? 'date' : undefined}
+                                    class:list={[
+                                      'block rounded-[2px] transition-colors hover:bg-muted',
+                                      isToday ? 'text-seal' : 'text-foreground',
+                                    ]}
+                                  >
+                                    <span class="block text-[0.6875rem] leading-4 tabular-nums">{dayNumber}</span>
+                                    <span class="mt-0.5 block h-[2px] w-full bg-muted" aria-hidden="true">
+                                      <span class="block h-full bg-foreground" style={`width:${pct}%`} />
+                                    </span>
+                                    <span class="sr-only">
+                                      {isToday ? '今天，' : ''}
+                                      {cell.total === 0 ? '没有条目' : `完成 ${cell.done} / ${cell.total}`}
+                                    </span>
+                                  </a>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+
+                        <div class="min-w-0 flex-1">
+                          <table class="w-full border-collapse text-[0.875rem]">
+                            <caption class="sr-only">
+                              {formatYearMonth(monthStart(month.monthKey))}每天的完成情况
+                            </caption>
+                            <thead class="sr-only">
+                              <tr>
+                                <th scope="col">日期</th>
+                                <th scope="col">完成情况</th>
+                                <th scope="col">完成率</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {month.days.map((day) => {
+                                const rate =
+                                  day.total === 0
+                                    ? null
+                                    : `${Math.round((day.done / day.total) * 100)}%`;
+                                return (
+                                  <tr class="border-b border-border/70 align-top">
+                                    <th scope="row" class="w-[9.5rem] py-2.5 pr-3 text-left font-normal">
+                                      <a
+                                        href={dayHref(day.date)}
+                                        class="tabular-nums text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
+                                      >
+                                        {formatMedium(day.date)}
+                                      </a>
+                                    </th>
+                                    <td class="py-2.5">
+                                      {/*
+                                        `maxTicks` 只在这里传：归档页是「一屏扫很多天」的版面，
+                                        一天几百条会把一行撑爆、把逐日扫视彻底毁掉。单日页不传，
+                                        行为一点没变（那边本来就是「这一天的全部都在这一页上」）。
+                                        被省掉的格数以 `+N` 紧凑标出，精确的 N/M 照常写在刻度下面。
+                                      */}
+                                      <ProgressTicks
+                                        total={day.total}
+                                        done={day.done}
+                                        emptyLabel="没有条目"
+                                        maxTicks={ARCHIVE_MAX_TICKS}
+                                      />
+                                    </td>
+                                    <td class="w-[4rem] py-2.5 text-right align-top tabular-nums text-[0.8125rem] text-muted-foreground">
+                                      {rate ?? '—'}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <p class="mt-4 border-t border-border/60 pt-2.5 text-[0.75rem] text-muted-foreground">
+                        本月划掉 <span class="font-medium text-foreground">{monthDone}</span> / {monthTotal} 条
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+
+          <p class="mt-4 text-[0.8125rem] text-muted-foreground">
+            共 {monthCount} 个月、{dayCount} 天有记录。
+          </p>
+        </div>
+
+        {/*
+          合计栏：sticky 跟滚。它存在的理由不只是导航——月份卡片少的时候，左列
+          摊宽也只到 1fr 为止，右缘这 16rem 由真实内容站住，归档页不再有大片留白。
+        */}
+        <aside class="mt-8 grid gap-4 sm:grid-cols-2 xl:order-2 xl:mt-0 xl:grid-cols-1">
+          <div class="xl:sticky xl:top-20 xl:self-start xl:space-y-4">
+            <section aria-labelledby="aside-years-heading" class="rounded-md border border-border bg-card p-4">
+              <h2 id="aside-years-heading" class="text-[0.8125rem] font-medium text-muted-foreground">年份</h2>
+              <ul class="mt-2.5 flex flex-wrap gap-x-4 gap-y-1">
+                {groups.map((year) => (
+                  <li>
+                    <a
+                      href={yearAnchor(year.year)}
+                      class="text-[0.8125rem] tabular-nums text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+                    >
+                      {year.year}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section aria-labelledby="aside-total-heading" class="rounded-md border border-border bg-card p-4">
+              <h2 id="aside-total-heading" class="text-[0.8125rem] font-medium text-muted-foreground">合计</h2>
+              <dl class="mt-2.5 space-y-2 text-[0.8125rem]">
+                <div class="flex items-baseline justify-between gap-2">
+                  <dt class="text-muted-foreground">有记录</dt>
+                  <dd class="font-medium text-foreground">{dayCount} 天 · {monthCount} 个月</dd>
                 </div>
-              ))}
-            </div>
-          </section>
-        ))}
+                <div class="flex items-baseline justify-between gap-2">
+                  <dt class="text-muted-foreground">划掉</dt>
+                  <dd class="font-medium text-foreground">
+                    {allDone} <span class="text-muted-foreground">/ {allTotal} 条</span>
+                  </dd>
+                </div>
+              </dl>
+            </section>
+          </div>
+        </aside>
       </div>
     )
-  }
-
-  {
-    groups.length > 0 ? (
-      <p class="mt-4 text-[0.8125rem] text-muted-foreground">
-        共 {monthCount} 个月、{dayCount} 天有记录。
-      </p>
-    ) : null
   }
 </BaseLayout>
