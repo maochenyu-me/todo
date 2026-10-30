@@ -1,4 +1,70 @@
 {
   "date": "2026-10-30",
-  "tasks": []
+  "tasks": [
+    {
+      "id": "k3m9x1",
+      "title": "把本周的会议纪要整理成一页，发给参会的人",
+      "done": false,
+      "completedAt": null,
+      "order": 0,
+      "priority": 1,
+      "tags": ["工作", "会议"],
+      "note": "重点记清楚三个待跟进事项的负责人",
+      "timeBlock": { "start": "09:00", "end": "09:45" },
+      "createdAt": "2026-10-30T08:40:00+08:00",
+      "updatedAt": "2026-10-30T08:40:00+08:00"
+    },
+    {
+      "id": "q7v2r5",
+      "title": "改完首页那版文案，等设计确认",
+      "done": true,
+      "completedAt": "2026-10-30T11:20:00+08:00",
+      "order": 1,
+      "priority": 0,
+      "tags": ["工作", "设计"],
+      "note": "标题从「每日记录」改成「今天写清楚」",
+      "timeBlock": { "start": "10:30", "end": "11:30" },
+      "createdAt": "2026-10-30T08:45:00+08:00",
+      "updatedAt": "2026-10-30T11:20:00+08:00"
+    },
+    {
+      "id": "w8t4n6",
+      "title": "买齐下周的早餐食材",
+      "done": false,
+      "completedAt": null,
+      "order": 2,
+      "priority": 2,
+      "tags": ["生活"],
+      "note": "燕麦、牛奶、鸡蛋、香蕉",
+      "timeBlock": null,
+      "createdAt": "2026-10-30T12:05:00+08:00",
+      "updatedAt": "2026-10-30T12:05:00+08:00"
+    },
+    {
+      "id": "h2b6j8",
+      "title": "晚饭后跑五公里",
+      "done": false,
+      "completedAt": null,
+      "order": 3,
+      "priority": 2,
+      "tags": ["健康"],
+      "note": "配速别管，跑完就行",
+      "timeBlock": { "start": "19:30", "end": "20:10" },
+      "createdAt": "2026-10-30T12:10:00+08:00",
+      "updatedAt": "2026-10-30T12:10:00+08:00"
+    },
+    {
+      "id": "c5d1p3",
+      "title": "回复外包的报价邮件",
+      "done": false,
+      "completedAt": null,
+      "order": 4,
+      "priority": 0,
+      "tags": ["工作", "沟通"],
+      "note": "对方上周三就发了，今天必须给答复",
+      "timeBlock": null,
+      "createdAt": "2026-10-30T13:00:00+08:00",
+      "updatedAt": "2026-10-30T13:00:00+08:00"
+    }
+  ]
 }
