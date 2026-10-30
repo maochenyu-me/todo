@@ -14,7 +14,7 @@ export const siteConfig = {
      *
      * 部署前改成你的真实地址。带不带尾斜杠都行——读取方一律用 `new URL()` 解析。
      */
-    url: "https://example.github.io",
+    url: "https://maochenyu-me.github.io",
     /**
      * 部署在子路径下时的前缀，**只有这一处需要按平台改**：
      * - GitHub Pages **项目站**（`https://<user>.github.io/<repo>/`）→ `"/<repo>"`
@@ -23,7 +23,7 @@ export const siteConfig = {
      * 忘了改是唯一「部署后整站白屏」的坑：HTML 里的 `_astro/*` 与站内链接都会指向
      * 根路径，而资源实际在子路径下。README 的部署段有同一句话的加粗版。
      */
-    basePath: "/", // GH Pages 项目站填 "/<repo>"
+    basePath: "/todo", // GH Pages 项目站：https://maochenyu-me.github.io/todo/
     lang: "zh-CN",
     timeZone: "Asia/Shanghai", // 全站"今天"的唯一依据
   },
