@@ -31,7 +31,7 @@ const hasMeta = tags.length > 0 || showPriority;
   - 开：有 timeBlock 的行显示时间，没有的用等宽占位，保证与上行对齐；
   - 关：这一列连同占位一起不渲染，标题从最左取满整行，不留空槽。
 -->
-<li class="task-row flex flex-wrap items-baseline gap-x-2.5 gap-y-1 py-2.5">
+<li class="task-row flex flex-wrap items-baseline gap-x-2.5 gap-y-1 py-3">
   {
     showTimeBlock ? (
       time ? (
@@ -106,7 +106,7 @@ const hasMeta = tags.length > 0 || showPriority;
 <style>
   /* 记录簿的「写的横线」：横线只出现在任务列表内部，不做通栏装饰 */
   .task-row {
-    border-bottom: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
+    border-bottom: 1px solid var(--paper-line);
   }
 
   /* 勾选字形：一个手画感的小方框，完成时框内一勾 */

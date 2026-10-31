@@ -3,7 +3,16 @@
 /* 明暗切换用 class 而非媒体查询：<head> 内联脚本在首帧前给 <html> 打 .dark */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* spec 7.2 色值 → Tailwind 令牌（bg-background / text-foreground / border-border 等） */
+/*
+ * 设计令牌：**横线信纸**。
+ *
+ * 语汇不是「浅色 UI」，而是纸：纸色、印刷墨、淡褐的纸边线、极淡的纤维噪点。
+ * 所以这里刻意没有圆角（纸没有圆角）、没有阴影（纸是平的），层级只靠
+ * 「纸面比桌面亮一档」+ 1px 纸边表达。
+ *
+ * 唯一的彩色是印章红（`--seal`）——它只出现在日期印章、未保存标记、危险动作上，
+ * 是整站的识别点，不许挪作装饰。
+ */
 @theme inline {
   --color-background: var(--background);
   --color-card: var(--card);
@@ -12,6 +21,8 @@
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-border: var(--border);
+  /* 横线纸上的「写字的线」，比通用边框略深一点，才看得出是格子 */
+  --color-line: var(--paper-line);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-seal: var(--seal);
@@ -21,43 +32,62 @@
   --font-sans:
     "IBM Plex Sans", -apple-system, "Segoe UI", system-ui, "PingFang SC",
     "HarmonyOS Sans SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  /*
+   * 衬线只给「标题、日期、印章」用。中文衬线在系统里落到宋体系
+   * （Windows: SimSun / macOS: Songti SC / Linux: Noto Serif CJK），字形参差、
+   * 小字号下发糊，所以正文与 UI 一律不用它——这是纸感与可读性之间的那条线。
+   */
+  --font-serif:
+    "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Songti SC", "SimSun",
+    "Noto Serif CJK SC", "Source Han Serif SC", serif;
 }
 
-/* 明亮：冷调簿纸 + 蓝黑墨水 + 印章朱红 */
+/* 明亮：冷米白的纸 + 中性印刷墨 + 印章朱红 */
 :root {
-  --background: #eff1ec;
-  --card: #fcfcfa;
-  --foreground: #1b2430;
-  --card-foreground: #1b2430;
-  --muted: #e6e9e2;
-  --muted-foreground: #5c6773;
-  --border: #d5d9d0;
-  --primary: #23407a;
-  --primary-foreground: #fcfcfa;
-  --seal: #be3a2b;
+  --background: #f6f3ea;
+  --card: #fffdf7;
+  --foreground: #23282b;
+  --card-foreground: #23282b;
+  --muted: #ece7d9;
+  --muted-foreground: #5f5a4e;
+  --border: #e3dccb;
+  --paper-line: #dcd3bd;
+  --primary: #2b4a6f;
+  --primary-foreground: #fffdf7;
+  --seal: #b23a2e;
   --done: #2f6b4f;
 
-  --radius: 0.5rem;
+  /* 纸没有圆角 */
+  --radius: 0rem;
+
+  /*
+   * 纸纤维：一层极淡的噪点，只铺在**背景**（不进卡片），否则字会被噪点糊住。
+   * 内联 SVG 而不是图片文件：零额外请求，体积 ~300 B，随 CSS 一起被内联进页面。
+   */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.045'/%3E%3C/svg%3E");
 }
 
-/* 暗黑 */
+/* 暗色：暗纸 + 米色墨（不是「黑底 UI」——纸在灯下变暗，仍然有纸边与纤维） */
 .dark {
-  --background: #12171c;
-  --card: #171e24;
-  --foreground: #e6e9e4;
-  --card-foreground: #e6e9e4;
-  --muted: #1f272e;
-  --muted-foreground: #92a0ac;
-  --border: #26313a;
-  --primary: #7fa0e8;
-  --primary-foreground: #12171c;
+  --background: #16181a;
+  --card: #1c1f21;
+  --foreground: #e8e4d8;
+  --card-foreground: #e8e4d8;
+  --muted: #23262a;
+  --muted-foreground: #a8a296;
+  --border: #2c3034;
+  --paper-line: #34383c;
+  --primary: #8fb0da;
+  --primary-foreground: #16181a;
   --seal: #e4675a;
-  --done: #6faf88;
+  --done: #7db394;
 }
 
 @layer base {
   body {
     background-color: var(--background);
+    /* 纸纤维铺在最底层：`background-image` 与内容不在同一层，字不会被噪点影响 */
+    background-image: var(--grain);
     color: var(--foreground);
     font-family: var(--font-sans);
     font-size: 1rem;
@@ -65,6 +95,13 @@
     /* 数字一律等宽对齐：日期、刻度、完成数 */
     font-variant-numeric: tabular-nums;
     -webkit-font-smoothing: antialiased;
+  }
+
+  /* 标题与日期用衬线：纸上的标题是「印」上去的，不是 UI 文案 */
+  h1,
+  h2 {
+    font-family: var(--font-serif);
+    letter-spacing: 0;
   }
 }
 

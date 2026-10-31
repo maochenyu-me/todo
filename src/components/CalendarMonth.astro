@@ -154,7 +154,7 @@ function dayHref(dateKey: string): string {
           // 无记录：只留日期数字，不画轨道。有记录但 0 条任务：画空轨道（「这天写了，只是没写事」）。
           if (!cell) {
             return (
-              <li class="flex min-h-[3.25rem] flex-col rounded-[2px] px-1.5 pt-1 pb-1.5">
+              <li class="flex min-h-[3.25rem] flex-col rounded-none px-1.5 pt-1 pb-1.5">
                 <span
                   class:list={[
                     'text-[0.8125rem] tabular-nums',
@@ -178,7 +178,7 @@ function dayHref(dateKey: string): string {
                 href={dayHref(dateKey)}
                 aria-current={isToday ? 'date' : undefined}
                 class:list={[
-                  'flex min-h-[3.25rem] w-full flex-col rounded-[2px] px-1.5 pt-1 pb-1.5 transition-colors',
+                  'flex min-h-[3.25rem] w-full flex-col rounded-none px-1.5 pt-1 pb-1.5 transition-colors',
                   'hover:bg-muted',
                   inMonth ? null : 'opacity-70',
                 ]}

@@ -46,6 +46,8 @@ const weekday = `周${'日一二三四五六'[weekdayOf(dateKey)]}`;
     line-height: 1;
     /* 印章压在纸上：一圈极淡的同色内描边，不用阴影 */
     box-shadow: 0 0 0 1px color-mix(in oklab, var(--seal) 16%, transparent);
+    /* 印章上的数字是「刻」出来的衬线数字，与正文的无衬线拉开一层 */
+    font-family: var(--font-serif);
   }
 
   .stamp-row {

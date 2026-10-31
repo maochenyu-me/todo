@@ -7,7 +7,7 @@ interface Props {
 const { title, hint } = Astro.props;
 ---
 
-<div class="border-l-2 border-border py-1 pl-4">
+<div class="border-l-2 border-line py-1 pl-4">
   <p class="text-[0.9375rem] text-foreground">{title}</p>
   {hint ? <p class="mt-1 text-[0.8125rem] text-muted-foreground">{hint}</p> : null}
 </div>
