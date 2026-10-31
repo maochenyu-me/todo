@@ -56,6 +56,25 @@ const canonical = new URL(canonicalHref ?? Astro.url.pathname, siteConfig.site.u
       子路径部署下图标 404，而且这种 404 只有打开 DevTools 才看得见。
     -->
     <link rel="icon" href={withBase('/favicon.svg')} type="image/svg+xml" />
+    {/* PWA：清单 + 主屏图标 + 浏览器 UI 着色（纸色/暗色，与 global.css 令牌一致）。 */}
+    <link rel="manifest" href={withBase('/manifest.webmanifest')} />
+    <link rel="apple-touch-icon" href={withBase('/icons/apple-touch-icon.png')} />
+    <meta name="theme-color" content="#f6f3ea" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#16181a" media="(prefers-color-scheme: dark)" />
+    {/*
+      PWA 两件套（公开页专属——admin 不用 BaseLayout，天然不注册 SW）：
+      1. 注册 SW（swpp 生成到 dist 根，URL = `${base}/sw.js`）。失败静默：SW 挂了
+         绝不影响看内容。为什么用 define:vars 注入 URL：站内路径必须走 withBase。
+         写成单行压缩形态是因为 define:vars 会让 Astro 放弃脚本压缩，格式化源码
+         会白吃几百字节预算。
+      2. swpp 的 DOM 侧脚本 `sw-dom.js`（defer）：页面加载后 postMessage 通知 SW
+         做增量更新（10 分钟冷却，UPDATE_CD）。脚本自身在没有 controller
+         （首次访问）时立即退出。
+    */}
+    <script is:inline define:vars={{ swUrl: withBase('/sw.js') }}>
+      if('serviceWorker'in navigator)addEventListener('load',function(){navigator.serviceWorker.register(swUrl).catch(function(){})});
+    </script>
+    <script defer src={withBase('/sw-dom.js')}></script>
     {/* 预取：纯声明，零脚本。目标由 `lib/day-nav.ts` 的同一份判定算出（不会指向 404）。 */}
     {prefetch.map((href) => <link rel="prefetch" href={href} />)}
     <link rel="canonical" href={canonical} />

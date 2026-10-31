@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build && node scripts/strip-html-comments.mjs",
+    "build": "astro build && node scripts/strip-html-comments.mjs && swpp-cli -b --prod",
     "preview": "astro preview",
     "check": "astro check",
     "test": "vitest run",
@@ -41,6 +41,7 @@
     "@playwright/test": "1.64.1",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "swpp-backends": "^3.1.4",
     "typescript": "5.9.3",
     "vite": "8.3.5",
     "vitest": "5.0.5"

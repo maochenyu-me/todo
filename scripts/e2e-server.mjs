@@ -76,8 +76,8 @@ build.on('exit', (code) => {
   console.log(
     `[e2e-server] 构建完成（今天冻结在种子最新日 ${FROZEN_TODAY}），启动预览服务 http://127.0.0.1:${PORT}`,
   );
-  // `astro build` 本身不含剥注释那一段（它在 package.json 的 build 串里）。
-  // 这里补跑一次，保证 E2E 跑的就是线上同款产物。
+  // `astro build` 本身不含剥注释与 swpp 那两段（它们在 package.json 的 build 串里）。
+  // 这里补跑同样的两段，保证 E2E 跑的就是线上同款产物（sw.js / sw-dom.js 也生成）。
   const strip = spawnSync(process.execPath, [join(ROOT, 'scripts', 'strip-html-comments.mjs')], {
     cwd: ROOT,
     stdio: 'inherit',
@@ -85,6 +85,16 @@ build.on('exit', (code) => {
   if (strip.status !== 0) {
     console.error('[e2e-server] 剥注释失败，不启动预览服务');
     shutdown(strip.status ?? 1);
+    return;
+  }
+  const swppCli = join(ROOT, 'node_modules', 'swpp-backends', 'dist', 'cli-index.js');
+  const swpp = spawnSync(process.execPath, [swppCli, '-b', '--prod'], {
+    cwd: ROOT,
+    stdio: 'inherit',
+  });
+  if (swpp.status !== 0) {
+    console.error('[e2e-server] swpp 构建失败，不启动预览服务');
+    shutdown(swpp.status ?? 1);
     return;
   }
   // `--host 127.0.0.1`：astro preview 默认只听 `localhost`，而 `localhost` 在 Windows 上

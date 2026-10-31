@@ -13,8 +13,8 @@
  *   这里管产物（dist 里不出现任务标题、不出现 React 运行时）。
  * - 「首页不含历史任务标题」失败时**修实现，不许改测试**（brief 明文）。
  *
- * 基线（2026-10-29，Task 14 验收）：29 个公开页合计内联 JS 1224 B、0 岛屿。
- * 这里用比基线更宽的硬上限（单页 < 2000 B）当护栏——收紧去改实现，别放宽这个数。
+ * 基线（2026-10-31，PWA 验收）：公开页 3 段内联 + 1 外链 sw-dom.js，内联 ~2.1 KB/页。
+ * 硬上限（单页 < 2600 B）当护栏——收紧去改实现，别放宽这个数。
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -75,13 +75,34 @@ describe('必需页面均生成', () => {
   });
 });
 
-describe('前台页面零 JS（除主题引导脚本）', () => {
-  const INLINE_BUDGET = 2000;
+describe('前台页面零 JS（除主题两段与 PWA 两件）', () => {
+  /**
+   * PWA 放宽记录：原红线 2000 B 是零 JS 时代的预算。引入 swpp 后公开页多了
+   * SW 注册段（~200 B，define:vars 前导 + 注册调用），经用户批准放宽到 2600。
+   * 现基线 ~2100 B（主题引导 322 + 注册 ~200 + 换肤 1589）——收紧去改实现，
+   * 别再放宽这个数。
+   */
+  const INLINE_BUDGET = 2600;
 
-  test('每个公开页 <script> 总数 <= 2（主题引导 + Astro 仅存的小引导）', () => {
+  /**
+   * PWA 引入后的脚本形态：3 段内联（主题引导 + SW 注册 + 换肤）+ 1 个外链
+   * `sw-dom.js`（swpp 的更新通知脚本，构建期生成）。除此之外零外链 JS 红线不变。
+   */
+  test('每个公开页 <script> 总数 <= 4（主题引导 + SW 注册 + 换肤 + sw-dom）', () => {
     for (const rel of publicPages) {
       // Vitest 的 Chai 子集没有 toHaveLengthLessOrEqual；count 上手写。
-      expect(scriptsOf(html(rel)).length, `${rel}`).toBeLessThanOrEqual(2);
+      expect(scriptsOf(html(rel)).length, `${rel}`).toBeLessThanOrEqual(4);
+    }
+  });
+
+  test('外链脚本只允许 sw-dom.js（swpp 更新通知），且路径带 base', () => {
+    const baseNoSlash = siteConfig.site.basePath.replace(/\/+$/, '');
+    for (const rel of publicPages) {
+      const srcs = scriptsOf(html(rel))
+        .flatMap((s) => [...s.matchAll(/<script[^>]*\ssrc="([^"]+)"/g)].map((m) => m[1]!));
+      for (const src of srcs) {
+        expect(src, `${rel} 出现了预期外的外链脚本`).toBe(`${baseNoSlash}/sw-dom.js`);
+      }
     }
   });
 
@@ -143,6 +164,64 @@ describe('admin 页', () => {
 
   test('admin 允许加载 React 岛屿（对照：公开页不允许）', () => {
     expect(admin).toMatch(/\/_astro\//);
+  });
+
+  test('admin 不注册 SW、不引用 sw-dom（私人工具不进 SW 缓存）', () => {
+    expect(admin).not.toMatch(/serviceWorker/);
+    expect(admin).not.toMatch(/sw-dom\.js/);
+  });
+});
+
+describe('PWA 产物（swpp）', () => {
+  const baseNoSlash = siteConfig.site.basePath.replace(/\/+$/, '');
+  const siteOrigin = new URL(siteConfig.site.url).origin;
+
+  test('dist 里有 sw.js / sw-dom.js / swpp 清单 / manifest', () => {
+    for (const rel of ['sw.js', 'sw-dom.js', 'swpp/tracker.json', 'swpp/update.json', 'manifest.webmanifest']) {
+      expect(existsSync(join(dist, rel)), `缺产物 ${rel}`).toBe(true);
+    }
+  });
+
+  test('sw.js 的 BASE_URL 指向 site.url + base（唯一真相）', () => {
+    const sw = readFileSync(join(dist, 'sw.js'), 'utf8');
+    expect(sw).toContain(`const BASE_URL = '${siteOrigin}${baseNoSlash}/'`);
+    expect(sw).toContain("const CACHE_NAME = 'todo-paper-cache'");
+    // 缓存规则里必须显式排除 admin 与 SW 自身（子路径写死在函数体里，靠这条对齐 site.config）
+    expect(sw).toContain(`'${baseNoSlash}/admin'`);
+    expect(sw).toContain(`'${baseNoSlash}/sw.js'`);
+  });
+
+  test('tracker 收录公开页、绝不收录 admin 与 _astro', () => {
+    const tracker = JSON.parse(readFileSync(join(dist, 'swpp', 'tracker.json'), 'utf8')) as {
+      tracker: Record<string, string>;
+    };
+    const urls = Object.keys(tracker.tracker);
+    expect(urls.length).toBeGreaterThan(0);
+    for (const url of urls) {
+      expect(url.startsWith(`${baseNoSlash}/admin`), `admin 混进 tracker：${url}`).toBe(false);
+      expect(url.startsWith(`${baseNoSlash}/_astro`), `_astro 混进 tracker：${url}`).toBe(false);
+    }
+    expect(urls).toContain(`${baseNoSlash}/`);
+  });
+
+  test('manifest 的 start_url/scope/icons 都带 base，图标文件真实存在', () => {
+    const manifest = JSON.parse(readFileSync(join(dist, 'manifest.webmanifest'), 'utf8')) as {
+      start_url: string;
+      scope: string;
+      icons: { src: string }[];
+    };
+    expect(manifest.start_url).toBe(`${baseNoSlash}/`);
+    expect(manifest.scope).toBe(`${baseNoSlash}/`);
+    for (const icon of manifest.icons) {
+      expect(icon.src.startsWith(`${baseNoSlash}/`), icon.src).toBe(true);
+      expect(existsSync(join(dist, icon.src.replace(`${baseNoSlash}/`, ''))), icon.src).toBe(true);
+    }
+  });
+
+  test('公开页引用 sw-dom.js 且注册的是 base 下的 sw.js', () => {
+    const source = html('index.html');
+    expect(source).toContain(`src="${baseNoSlash}/sw-dom.js"`);
+    expect(source).toContain(`const swUrl = "${baseNoSlash}/sw.js"`);
   });
 });
 

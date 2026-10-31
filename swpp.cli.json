@@ -1,0 +1,7 @@
+{
+  "webRoot": "dist",
+  "configFiles": ["swpp.config.ts"],
+  "auto_register": false,
+  "gen_dom": true,
+  "excludes": [".*"]
+}
