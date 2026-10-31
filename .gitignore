@@ -7,3 +7,5 @@ playwright-report/
 .superpowers/
 .superpowers
 shots/
+# 截图只在本地留档（E2E 会覆盖它们），不进仓库
+docs/superpowers/screenshots/

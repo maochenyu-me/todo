@@ -23,6 +23,13 @@ import { expect, test, type Page } from '@playwright/test';
  * （等过渡就只能 sleep，那正是禁用的做法）。
  */
 
+/**
+ * 截图的落点：**只在本地留档，不进仓库**。
+ *
+ * `docs/superpowers/` 整个目录在 `.gitignore` 里，这 25 张图也早已从索引中摘掉
+ * （2026-10-31 `git rm -r --cached`）。跑 E2E 仍然会照常覆盖它们，方便在本地
+ * 对照改动，但 `git status` 不会再出现它们，也不会被误推上去。
+ */
 const OUT_DIR = join(process.cwd(), 'docs', 'superpowers', 'screenshots');
 
 /** 六条核心路径。标签页挑一个真实存在的种子标签。 */

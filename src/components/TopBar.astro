@@ -1,5 +1,5 @@
 ---
-import { Archive, BookOpen, CalendarDays, ChartLine, Tag } from '@lucide/astro';
+import { Archive, BookOpen, CalendarDays, ChartLine, Lock, Tag } from '@lucide/astro';
 import type { NavKey } from '../lib/types';
 import { withBase } from '../lib/urls';
 import { siteConfig } from '../../site.config.ts';
@@ -25,6 +25,9 @@ const NAV_ITEMS = [
 
 const pages = siteConfig.frontend.pages;
 const items = NAV_ITEMS.filter((item) => pages[item.key]);
+
+/** 后台入口：私人工具，路径仍以 `siteConfig.admin.path` 为唯一真相。 */
+const adminHref = withBase(siteConfig.admin.path);
 ---
 
 <!--
@@ -67,6 +70,18 @@ const items = NAV_ITEMS.filter((item) => pages[item.key]);
           );
         })
       }
+      {/*
+        后台入口：不是内容页，所以不跟五个 tab 争权重——一道细分隔线隔开，颜色降一档，
+        悬停才提到正文色。`aria-current` 不参与：admin 页不继承 BaseLayout，没有 activeNav。
+      */}
+      <span aria-hidden="true" class="mx-1 h-4 w-px shrink-0 bg-border"></span>
+      <a
+        href={adminHref}
+        class="flex items-center gap-1.5 whitespace-nowrap px-2.5 py-1.5 text-[0.875rem] text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <Lock size={15} stroke-width={1.75} class="shrink-0" aria-hidden="true" />
+        <span>后台</span>
+      </a>
     </nav>
 
     <ThemeToggle />
