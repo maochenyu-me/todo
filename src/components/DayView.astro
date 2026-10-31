@@ -109,15 +109,14 @@ const ticksEmptyLabel = isCorrupt
 ---
 
 <!--
-  根元素包一层 div，同时它是**纸上的一页**：1px 纸边、无圆角、无阴影（纸是平的），
-  左侧一条极淡的红色页边线——横线信纸的那道竖线，也是「这一页」的起点。
+  根元素 = **一张纸**：1px 纸边、无圆角、无阴影，宽度收到 54rem（纸有纸的宽度；
+  72rem 的横条会让没写几条的日子变成"右边一整片空白的表格"）。
+  只有横线（任务行）——竖的页边线试过，会和空状态的左边线打架，读起来像表格边框。
   本组件模板曾是多根（页首/列表/翻页），Astro 会把多根组件摊平成父容器的直接子元素
   ——进 grid 时会被当成多个格子（实测踩过：任务列表被甩到右列），包一层之后
   整个 DayView 是布局里的**一个**元素。
 -->
-<div
-  class="relative border border-border bg-card before:absolute before:inset-y-0 before:left-4 before:w-px before:bg-seal/20"
->
+<div class="mx-auto w-full max-w-[54rem] border border-border bg-card">
   <!-- 页首：印章 ＋ 刻度，全部左对齐。印章是页面上唯一倾斜的东西。 -->
   <header class="flex flex-wrap items-end gap-x-7 gap-y-5 p-6 pb-5 sm:p-8 sm:pb-5">
   <DateStamp dateKey={dateKey} />
@@ -192,7 +191,7 @@ const ticksEmptyLabel = isCorrupt
 -->
 <nav
   aria-label="按日翻阅"
-  class="mt-8 flex items-center justify-between gap-3 border-t border-line bg-muted/40 px-6 py-4 text-[0.8125rem] sm:px-8"
+  class="mt-8 flex items-center justify-between gap-3 border-t border-line px-6 py-4 text-[0.8125rem] sm:px-8"
 >
   {
     nav.prev !== null ? (
