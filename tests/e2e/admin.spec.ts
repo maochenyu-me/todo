@@ -255,8 +255,65 @@ test.describe('⑤ 发布：一次 commit，只 PATCH 一次 ref', () => {
   });
 });
 
-test.describe('⑥ 切换日期不再发请求（缓存生效）', () => {
-  test('来回切换与重复点同一天都不新增任何 contents 请求', async ({ page }) => {
+test.describe('⑥ 新建一天：给还没有文件的日期开一张空白页', () => {
+  /** 日期输入框的本地格式是 `YYYY-MM-DD`（与数据文件同名）。 */
+  const NEW_DAY_INPUT = '#admin-new-day';
+
+  test('新建未来日期 → 被选中且标 dirty → 发布时写到活跃区', async ({ page }) => {
+    const repo = await readyAdmin(page);
+    await expect(page.getByTestId('unsaved-changes')).toContainText('没有未保存的改动');
+
+    // 一个仓库里还不存在的未来日期。
+    const fresh = '2026-11-05';
+    await page.locator(NEW_DAY_INPUT).fill(fresh);
+    await page.getByRole('button', { name: '创建' }).click();
+
+    // 编辑器切到那一天，标题是完整日期；并且这一天被标成"未保存"（= 发布时会建文件）。
+    await expect(page.getByRole('heading', { name: /2026年11月5日/ })).toBeVisible();
+    await expect(page.getByTestId('unsaved-changes')).toContainText('1 天有未保存改动');
+    await waitForView(page, 'dirty');
+    // 空白的这一天有引导文案，不是一片空白。
+    await expect(page.locator('body')).toContainText('这一天还没有待办');
+
+    // 写一条内容再发布：新文件必须真的落到活跃区目录。
+    await addTask(page, '提前写下的计划');
+    repo.calls.length = 0;
+    await page.getByRole('button', { name: '保存并发布' }).click();
+    await expect(page.getByTestId('last-commit')).toBeVisible({ timeout: 20_000 });
+
+    const written = [...repo.files.keys()].filter((path) => path.endsWith(`${fresh}.json`));
+    expect(written).toEqual([`src/data/todos/${fresh}.json`]);
+    expect(repo.files.get(written[0]!)).toContain('提前写下的计划');
+  });
+
+  test('新建一个已存在的日期 → 只切过去，不覆盖也不标 dirty', async ({ page }) => {
+    await readyAdmin(page);
+    await expect(page.getByTestId('unsaved-changes')).toContainText('没有未保存的改动');
+
+    // DAY_B 已经在仓库里（mock 的活跃区三天之一）。
+    await page.locator(NEW_DAY_INPUT).fill('2026-10-28');
+    await page.getByRole('button', { name: '创建' }).click();
+
+    // 切过去了，内容还是原来那份，dirty 一点没涨。
+    await expect(page.getByRole('heading', { name: /2026年10月28日/ })).toBeVisible();
+    await expect(page.locator('body')).toContainText('把归档脚本写出来');
+    await expect(page.getByTestId('unsaved-changes')).toContainText('没有未保存的改动');
+    await waitForView(page, 'ready');
+  });
+
+  test('非法日期被表单当场拦下，不进 reducer', async ({ page }) => {
+    await readyAdmin(page);
+
+    // 清空输入框（`<input type=date>` 允许空值）→ 提交时被 `isValidDateKey` 拦下。
+    await page.locator(NEW_DAY_INPUT).fill('');
+    await page.getByRole('button', { name: '创建' }).click();
+
+    await expect(page.getByRole('alert')).toContainText('真实存在的日期');
+    await expect(page.getByTestId('unsaved-changes')).toContainText('没有未保存的改动');
+  });
+});
+
+test.describe('⑥ 切换日期不再发请求（缓存生效）', () => {  test('来回切换与重复点同一天都不新增任何 contents 请求', async ({ page }) => {
     const repo = await readyAdmin(page);
 
     const contentsBefore = count(repo.calls, 'contents');

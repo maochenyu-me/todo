@@ -103,6 +103,10 @@ export default function AdminApp({ siteTitle }: { siteTitle: string }) {
     (date: string) => dispatch({ type: 'SELECT_DAY', date }),
     [dispatch],
   );
+  const newDay = React.useCallback(
+    (date: string) => dispatch({ type: 'NEW_DAY', date }),
+    [dispatch],
+  );
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[64rem] flex-col gap-6 px-5 pt-8 pb-16 sm:px-8">
@@ -139,6 +143,7 @@ export default function AdminApp({ siteTitle }: { siteTitle: string }) {
           publishing={publishing}
           patchDay={patchDay}
           selectDay={selectDay}
+          newDay={newDay}
           dispatch={dispatch}
         />
       ) : null}
@@ -165,16 +170,19 @@ function LoadedEditor({
   publishing,
   patchDay,
   selectDay,
+  newDay,
   dispatch,
 }: {
   state: Extract<AdminState, { status: 'ready' | 'publishing' }>;
   publishing: boolean;
   patchDay: (day: DayEntry) => void;
   selectDay: (date: string) => void;
+  newDay: (date: string) => void;
   dispatch: React.Dispatch<AdminAction>;
 }) {
   const { owner, repo, branch, commitMessage, authorName, authorEmail } = siteConfig.admin.github;
   const repoLabel = `${owner}/${repo}@${branch}`;
+  const todayKey = todayInZone(siteConfig.site.timeZone);
 
   /** 最近一次发布成功的 commit（htmlUrl 渲染成链接）。新一次发布开始 / 失败即清空。 */
   const [lastCommit, setLastCommit] = React.useState<{ sha: string; htmlUrl: string } | null>(null);
@@ -196,7 +204,6 @@ function LoadedEditor({
     }
     // 第三道闸：loadWarnings 的日期拒绝写入（覆盖读不出来的文件就是丢数据）。
     // buildPublishPayload 是纯函数，在这里同步跑完；抛错就停在 ready，不进 publishing。
-    const todayKey = todayInZone(siteConfig.site.timeZone);
     let payload: PublishPayload;
     try {
       payload = buildPublishPayload({
@@ -249,7 +256,7 @@ function LoadedEditor({
             : `发布失败：${caught instanceof Error ? caught.message : String(caught)}`;
         dispatch({ type: 'PUBLISH_FAIL', message });
       });
-  }, [state, invalidDays.length, loadWarnings, dispatch, commitMessage, authorName, authorEmail]);
+  }, [state, invalidDays.length, loadWarnings, dispatch, commitMessage, authorName, authorEmail, todayKey]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -306,6 +313,8 @@ function LoadedEditor({
           selected={state.selected}
           dirty={state.dirty}
           onSelect={selectDay}
+          onNewDay={newDay}
+          todayKey={todayKey}
           disabled={publishing}
         />
         <EditorView

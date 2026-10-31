@@ -241,6 +241,71 @@ describe('adminReducer', () => {
     expect(after.dirty.size).toBe(1); // 同一天重复改，dirty 不重复计数
   });
 
+  /**
+   * NEW_DAY：为**仓库里还没有的**日期开一张空白页。
+   *
+   * 三条规则（与 UI 的分工：UI 负责提示，reducer 负责结构不可能坏）：
+   * 1. 新日期 → 插入空条目 + 标 dirty + 选中；
+   * 2. 已存在的日期 → **只选中**，不标 dirty（绝不覆盖已有内容）；
+   * 3. 非法日期 → 原样不动（不造出 `days` 里指向非法键的条目）。
+   */
+  test('NEW_DAY：新日期插入空条目、标 dirty、并选中', () => {
+    const before: AdminState = {
+      status: 'ready',
+      days: sampleDays(),
+      selected: DATE,
+      dirty: new Set<string>(),
+      tokenExpiresAt: null,
+    };
+    const fresh = '2026-11-01';
+
+    const after = adminReducer(before, { type: 'NEW_DAY', date: fresh });
+
+    expect(after.status).toBe('ready');
+    if (after.status !== 'ready') throw new Error('unreachable');
+    expect(after.selected).toBe(fresh);
+    expect(after.days[fresh]).toEqual({ date: fresh, tasks: [] });
+    expect(after.dirty.has(fresh)).toBe(true);
+    // 原有那一天不受影响（同一个对象带过去）
+    expect(after.days[DATE]).toBe(before.days[DATE]);
+    // 不可变：上一份 state 没被就地改写
+    expect(Object.keys(before.days)).toEqual([DATE]);
+    expect(before.dirty.size).toBe(0);
+  });
+
+  test('NEW_DAY：日期已存在时只切换选中，不标 dirty、不覆盖', () => {
+    const before = readyState(); // days 里只有 DATE，dirty = {DATE}
+    const original = before.days[DATE]!;
+
+    const after = adminReducer(before, { type: 'NEW_DAY', date: DATE });
+
+    if (after.status !== 'ready') throw new Error('unreachable');
+    expect(after.selected).toBe(DATE);
+    // 内容原样（引用相同）：绝不因为"新建"而把已有一天换成空条目
+    expect(after.days[DATE]).toBe(original);
+    expect([...after.dirty]).toEqual([DATE]);
+  });
+
+  test('NEW_DAY：非法日期原样不动（不造出非法的 days 键）', () => {
+    const before: AdminState = {
+      status: 'ready',
+      days: sampleDays(),
+      selected: DATE,
+      dirty: new Set<string>(),
+      tokenExpiresAt: null,
+    };
+    for (const bad of ['', '2026-13-01', '2026-02-30', 'yesterday', '2026-1-1']) {
+      const after = adminReducer(before, { type: 'NEW_DAY', date: bad });
+      expect(after, bad).toBe(before);
+    }
+  });
+
+  test('NEW_DAY：publishing 下不生效（与其它编辑动作一致）', () => {
+    const publishing = adminReducer(readyState(), { type: 'PUBLISH_START' });
+    const after = adminReducer(publishing, { type: 'NEW_DAY', date: '2026-11-01' });
+    expect(after).toBe(publishing);
+  });
+
   test('publishing 下 CLEAR_TOKEN 也能干净回到 disconnected', () => {
     const publishing = adminReducer(readyState(), { type: 'PUBLISH_START' });
     const s = adminReducer(publishing, { type: 'CLEAR_TOKEN' });
@@ -273,6 +338,7 @@ describe('adminReducer', () => {
       { type: 'CLEAR_TOKEN' },
       { type: 'SELECT_DAY', date: DATE },
       { type: 'PATCH_DAY', day: sampleEntry(DATE) },
+      { type: 'NEW_DAY', date: '2026-11-01' },
       { type: 'PUBLISH_START' },
       { type: 'PUBLISH_OK' },
       { type: 'PUBLISH_FAIL', message: 'x' },

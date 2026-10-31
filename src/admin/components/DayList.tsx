@@ -1,8 +1,11 @@
 import * as React from 'react';
 
-import { formatMedium } from '@/lib/date';
+import { formatMedium, isValidDateKey } from '@/lib/date';
 import type { DayEntry } from '@/lib/types';
 import { cn } from '@/lib/utils';
+
+import { Button } from './ui/button';
+import { Input } from './ui/input';
 
 /**
  * 左栏日期列表：只列日期，不显示完成数。
@@ -12,6 +15,10 @@ import { cn } from '@/lib/utils';
  *
  * 被修改过（在 `dirty` 里）的日期加一枚印章色的小点：它不解释"改了什么"，
  * 只提醒"这一天还没发布"。最新的日期排最上面——编辑的对象通常是最近的日子。
+ *
+ * 顶部是「新建一天」：给仓库里还没有的日期开一张空白页（允许任意合法日期，含未来）。
+ * 日期已存在时**只是切过去**，不会覆盖——所以这里不做"已存在"的报错，
+ * 那是最常见的一种误记，报错只会挡路。真正的结构约束在 reducer 的 `NEW_DAY` 里。
  */
 
 export type DayListProps = {
@@ -19,16 +26,71 @@ export type DayListProps = {
   selected: string;
   dirty: ReadonlySet<string>;
   onSelect: (date: string) => void;
+  /** 新建一天；日期已存在由 reducer 折成"选中"，UI 不重复判断。 */
+  onNewDay: (date: string) => void;
+  /** 「今天」的唯一依据（站点时区），用作日期输入框的默认值。 */
+  todayKey: string;
   /** 发布中锁定：`SELECT_DAY` 在 `publishing` 下不生效，点了没反应不如不让点。 */
   disabled?: boolean;
 };
 
-export function DayList({ days, selected, dirty, onSelect, disabled = false }: DayListProps) {
+export function DayList({
+  days,
+  selected,
+  dirty,
+  onSelect,
+  onNewDay,
+  todayKey,
+  disabled = false,
+}: DayListProps) {
   const dates = React.useMemo(() => Object.keys(days).sort().reverse(), [days]);
+  const [draftDate, setDraftDate] = React.useState(todayKey);
+  const [error, setError] = React.useState<string | null>(null);
+  const errorId = React.useId();
+
+  function handleCreate(event: React.FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    const value = draftDate.trim();
+    if (!isValidDateKey(value)) {
+      setError('请选一个真实存在的日期（YYYY-MM-DD）');
+      return;
+    }
+    setError(null);
+    onNewDay(value);
+  }
 
   return (
     <nav aria-label="选择日期" className="rounded-[var(--radius)] border border-border bg-card p-2">
-      <ul className="flex max-h-[16rem] flex-col gap-0.5 overflow-y-auto md:max-h-[36rem]">
+      <form onSubmit={handleCreate} className="mb-1 flex flex-col gap-1.5 border-b border-border px-1 pb-2">
+        <label htmlFor="admin-new-day" className="text-[0.75rem] text-muted-foreground">
+          新建一天
+        </label>
+        <div className="flex items-center gap-1">
+          <Input
+            id="admin-new-day"
+            type="date"
+            value={draftDate}
+            disabled={disabled}
+            aria-invalid={error !== null || undefined}
+            aria-describedby={error !== null ? errorId : undefined}
+            onChange={(event) => {
+              setDraftDate(event.target.value);
+              setError(null);
+            }}
+            className="h-8 min-w-0 flex-1 px-1.5 text-[0.8125rem]"
+          />
+          <Button type="submit" size="sm" variant="outline" disabled={disabled} className="h-8 shrink-0 px-2">
+            创建
+          </Button>
+        </div>
+        {error !== null ? (
+          <p id={errorId} role="alert" className="text-[0.75rem] leading-relaxed text-seal">
+            {error}
+          </p>
+        ) : null}
+      </form>
+
+      <ul className="flex max-h-[16rem] flex-col gap-0.5 overflow-y-auto md:max-h-[34rem]">
         {dates.map((date) => {
           const isDirty = dirty.has(date);
           const isCurrent = date === selected;

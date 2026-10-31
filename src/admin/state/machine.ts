@@ -52,6 +52,7 @@
  */
 
 import type { DayEntry } from '@/lib/types';
+import { isValidDateKey } from '@/lib/date';
 
 /**
  * 仓库里**存在**、但这次没能载入的一天。
@@ -109,6 +110,15 @@ export type AdminAction =
   | { type: 'CLEAR_TOKEN' }
   /** 选中另一天（只换 `selected`）。 */
   | { type: 'SELECT_DAY'; date: string }
+  /**
+   * 为仓库里**还没有的**日期开一张空白页（后台「新建一天」）。
+   *
+   * 三条规则由 reducer 保证结构正确：
+   * - 日期不合法 → 原样不动（绝不往 `days` 里塞非法键）；
+   * - 该日期**已存在** → 只切换选中，**不标 dirty**（不覆盖已有内容）；
+   * - 不存在 → 插入 `{ date, tasks: [] }`、标 dirty、并选中。
+   */
+  | { type: 'NEW_DAY'; date: string }
   /** 某一天被改过：替换该天条目并标记为未保存。 */
   | { type: 'PATCH_DAY'; day: DayEntry }
   /** 开始提交。 */
@@ -215,6 +225,24 @@ export function adminReducer(state: AdminState, action: AdminAction): AdminState
     case 'SELECT_DAY':
       // 换一天看，不等于改了什么：`dirty` 一个字都不动。
       return state.status === 'ready' ? { ...state, selected: action.date } : state;
+
+    case 'NEW_DAY': {
+      if (state.status !== 'ready') return state;
+      if (!isValidDateKey(action.date)) return state;
+      // 已经存在的那一天：只切过去看，绝不因为"新建"而替换成空条目。
+      if (state.days[action.date] !== undefined) {
+        return { ...state, selected: action.date };
+      }
+      return {
+        ...state,
+        days: { ...state.days, [action.date]: { date: action.date, tasks: [] } },
+        dirty: new Set([...state.dirty, action.date]),
+        selected: action.date,
+        // 新建一天意味着"要在仓库里创建这个文件"，上一次的错误提示（比如发布失败）
+        // 已经过时了，清掉——否则红条会一直挂在一张全新的白纸上面。
+        error: undefined,
+      };
+    }
 
     case 'PATCH_DAY': {
       if (state.status !== 'ready') return state;

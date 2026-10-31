@@ -249,6 +249,19 @@ export function ConnectView({ state, dispatch, createClient = createGitHubClient
           return;
         }
 
+        /*
+         * 仓库里**一个数据文件都没有**（第一次使用 / 清库之后）：合成「今天的空白页」，
+         * 否则 `TOKEN_OK` 会因为 `days` 为空而被 reducer 拒绝，界面永远停在未连接——
+         * 连"新建第一天"的入口都到不了。
+         *
+         * 为什么不标 dirty：这是**占位**，不是改动。用户写了第一条待办才会 `PATCH_DAY`
+         * 变脏，发布链路也只写 dirty 的日期，所以不会凭空在仓库里建出一个空文件。
+         * 注意这里只覆盖"零个文件"的情形；有文件但全部读不出来时仍然报错（覆盖即丢数据）。
+         */
+        if (dates.length === 0) {
+          days[todayKey] = { date: todayKey, tasks: [] };
+        }
+
         setWarnings(failures);
         setToken('');
         // `selected` 由 reducer 从 `days` 派生（`todayKey` 只是"希望优先选中哪天"）：
