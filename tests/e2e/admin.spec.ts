@@ -114,6 +114,23 @@ test.describe('① 口令门', () => {
     // 输入框被清空（让人从头敲，而不是在错的口令上改）。
     await expect(page.locator(PASSWORD_INPUT)).toHaveValue('');
   });
+
+  test('「回到首页」在未解锁时也在，且指向站内首页', async ({ page }) => {
+    await setupAdmin(page);
+    await waitForView(page, 'locked');
+
+    const home = page.getByTestId('admin-home-link');
+    await expect(home).toBeVisible();
+
+    // 路径必须带 base（构建产物挂在 /todo 下），而不是写死的 `/`。
+    const href = await home.getAttribute('href');
+    expect(href).toBe('/todo/');
+
+    // 真的能回到前台首页：点过去后是公开站的顶栏，不是后台自己。
+    await home.click();
+    await expect(page).toHaveURL(/\/todo\/$/);
+    await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
+  });
 });
 
 test.describe('② 对口令 → disconnected，且此刻页面上没有任何待办数据', () => {

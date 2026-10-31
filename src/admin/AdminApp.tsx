@@ -1,4 +1,4 @@
-import { CheckCircle2, CloudOff, Loader2, Lock, PencilLine } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, CloudOff, Loader2, Lock, PencilLine } from 'lucide-react';
 import * as React from 'react';
 
 import { todayInZone } from '@/lib/date';
@@ -6,10 +6,12 @@ import { GitHubError, type GitHubClient } from '@/lib/github';
 import { validateDay } from '@/lib/validate';
 import type { DayEntry } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { withBase } from '@/lib/urls';
 
 import { siteConfig } from '../../site.config.ts';
 import { DayList } from './components/DayList';
 import { StatusBar } from './components/StatusBar';
+import { Button } from './components/ui/button';
 import { activeClient } from './client-holder';
 import {
   buildCommitMessage,
@@ -117,22 +119,30 @@ export default function AdminApp({ siteTitle }: { siteTitle: string }) {
             数据只从你的 GitHub 仓库读取；本机只保存访问令牌。
           </p>
         </div>
-        {/* data-view 给自动化测试读当前状态用，不参与样式。 */}
-        <span
-          data-testid="admin-view"
-          data-view={view}
-          className={cn(
-            'inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-1 text-[0.8125rem]',
-            publishing ? 'border-primary/40 text-primary' : 'border-border text-muted-foreground',
-          )}
-        >
-          {publishing ? (
-            <Loader2 className="size-3.5 animate-spin" strokeWidth={1.75} aria-hidden="true" />
-          ) : (
-            <StatusIcon view={view} />
-          )}
-          {VIEW_LABEL[view]}
-        </span>
+        {/* 右侧：回到首页 + 当前状态。徽标给自动化测试读，不参与样式。 */}
+        <div className="flex shrink-0 items-center gap-2">
+          <Button variant="ghost" size="sm" asChild>
+            <a href={withBase('/')} data-testid="admin-home-link">
+              <ArrowLeft aria-hidden="true" />
+              回到首页
+            </a>
+          </Button>
+          <span
+            data-testid="admin-view"
+            data-view={view}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-1 text-[0.8125rem]',
+              publishing ? 'border-primary/40 text-primary' : 'border-border text-muted-foreground',
+            )}
+          >
+            {publishing ? (
+              <Loader2 className="size-3.5 animate-spin" strokeWidth={1.75} aria-hidden="true" />
+            ) : (
+              <StatusIcon view={view} />
+            )}
+            {VIEW_LABEL[view]}
+          </span>
+        </div>
       </header>
 
       {state.status === 'locked' ? <LockedView state={state} dispatch={dispatch} /> : null}
