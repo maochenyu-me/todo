@@ -38,7 +38,11 @@ jobs:
       - name: Build
         uses: withastro/action@v3
         with:
-          node-version: 22
+          # 必须用 24 而不是 22：Astro 7 要求 Node >= 22.23.4，而 Node 22 系列目前
+          # 最新只到 22.23.3——`node-version: 22` 永远解析不出满足要求的版本，
+          # 构建第一步就被 Astro 的引擎检查拦下（2026-10-31 实测 CI 红）。
+          # 24 同时是本地开发用的版本，CI 与本地一致。
+          node-version: 24
         env:
           # 口令派生值是**构建时**内联进 bundle 的，所以必须在构建这一步就注入。
           # 值就是 `npm run gen-password` 输出那一整行等号右边的部分（含 `\$` 转义）：
